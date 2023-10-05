@@ -1,14 +1,15 @@
 use axum::{extract::State, http::StatusCode, Json};
-use surrealdb::{engine::remote::ws::Client, Surreal};
-use voyager::{
-    level::{metadata::Key, CreateLevel},
-    Record,
-};
+use surrealdb::{engine::local::Db, Surreal};
+use ulid::Ulid;
+use voyager::level::{CreateLevel, PrivateLevel};
 
+/// Creates a level in the database, then returns
+/// a status code (`200 OK` or `500 INTERNAL_SERVER_ERROR`)
+/// along with the level's ID/key if created.
 pub async fn upload(
-    State(db): State<Surreal<Client>>,
+    State(db): State<Surreal<Db>>,
     Json(create_level): Json<CreateLevel>,
-) -> (StatusCode, Json<Option<Key>>) {
+) -> (StatusCode, Json<Option<Ulid>>) {
     tracing::info!(
         "POST: Level \"{}\" by \"{}\".",
         create_level.level.name,
@@ -16,12 +17,24 @@ pub async fn upload(
     );
     let level = create_level.to_private_level();
 
-    let create: Result<Vec<Record>, surrealdb::Error> = db.create("level").content(&level).await;
+    println!("going to create");
+
+    let id = Ulid::new();
+
+    let create: Result<Option<PrivateLevel>, surrealdb::Error> =
+        db.create(("level", id.to_string())).content(&level).await;
+    println!("created");
     match create {
-        Ok(record) => {
-            tracing::debug!("stored level in database: {record:?}");
-            (StatusCode::CREATED, Json(Some(level.key)))
-        }
+        Ok(option) => match option {
+            Some(level) => {
+                tracing::debug!("stored level in database: {level:?}");
+                (StatusCode::CREATED, Json(Some(id)))
+            }
+            None => {
+                tracing::warn!("could not store level in database");
+                (StatusCode::INTERNAL_SERVER_ERROR, Json(None))
+            }
+        },
         Err(why) => {
             tracing::warn!("could not store level in database: {why}");
             (StatusCode::INTERNAL_SERVER_ERROR, Json(None))

@@ -1,8 +1,11 @@
 use axum::{extract::State, http::StatusCode, Json};
-use surrealdb::{engine::remote::ws::Client, Surreal};
+use surrealdb::{engine::local::Db, Surreal};
 use voyager::level::{Level, PrivateLevel};
 
-pub async fn levels(State(db): State<Surreal<Client>>) -> (StatusCode, Json<Option<Vec<Level>>>) {
+/// Returns a status code (`200 OK` or `500 INTERNAL_SERVER_ERROR`)
+/// along with a JSON array containing level objects. Format TBD.
+#[tracing::instrument]
+pub async fn levels(State(db): State<Surreal<Db>>) -> (StatusCode, Json<Option<Vec<Level>>>) {
     tracing::info!("GET: Level list.");
     let select: Result<Vec<PrivateLevel>, surrealdb::Error> = db.select("level").await;
 

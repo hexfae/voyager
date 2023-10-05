@@ -14,7 +14,6 @@ Run `cargo build` to build in debug mode or `cargo build --release` to build in 
 
 ### Prerequisites
 
-- A [SurrealDB](https://surrealdb.com/) database running on `localhost:8000` with a `root` user & a `root` password (see ["Getting started"](https://surrealdb.com/docs/introduction/start)).
 - An open port on `3000`, which it will bind to.
 
 ### Usage
@@ -33,11 +32,12 @@ $ curl localhost:3000/void_stranger
 
 ## To-do list
 
-- Use [tower_sessions](https://lib.rs/crates/tower-sessions) for session management & [deadpool](https://lib.rs/crates/deadpool) for an async connection pool.
-- Use an [embedded SurrealDB database](https://surrealdb.com/docs/embedding/rust) instead for ease of starting, most likely [Speedb](https://www.speedb.io/).
-- Use `serde::Value` instead of `Level`, `CreateLevel`, `PublicLevel`, `Key`, & maybe also `Record`.
-- Definitely use `serde::Value` for storing level data (JSON).
-- Log to a file (DEBUG) as well as to stdout (INFO).
-- PUT router for editing levels.
-- A level rating system (like/dislike, star rating, play count, completion count?).
-- General code clean-up, especially in the `server/routers/` directory.
+- [ ] Use [tower_sessions](https://lib.rs/crates/tower-sessions) for session management & [deadpool](https://lib.rs/crates/deadpool) for an async connection pool.
+- [x] Use an [embedded SurrealDB database](https://surrealdb.com/docs/embedding/rust) instead for ease of starting, most likely [Speedb](https://www.speedb.io/).
+- [ ] Finalize data structures.
+- [ ] Use `serde::Value` instead of `Level`, `CreateLevel`, `PublicLevel`, `Key`, & maybe also `Record`.
+- [ ] Definitely use `serde::Value` for storing level data (JSON).
+- [ ] Log to a file (DEBUG) as well as to stdout (INFO).
+- [ ] PUT router for editing levels.
+- [ ] A level rating system (like/dislike, star rating, play count, completion count?).
+- [ ] General code clean-up, especially in the `server/routers/` directory.

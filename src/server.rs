@@ -5,18 +5,19 @@ use axum::{
 use color_eyre::{eyre::Context, Result};
 use routers::{levels::levels, upload::upload};
 use std::net::SocketAddr;
-use surrealdb::{engine::remote::ws::Client, Surreal};
+use surrealdb::{engine::local::Db, Surreal};
 
 mod routers;
 
-pub async fn start_voyager(db: Surreal<Client>) -> Result<()> {
+/// Starts the Voyager server on port 3000.
+pub async fn start_voyager(db: Surreal<Db>) -> Result<()> {
     tracing::info!("Voyager is now listening on port 3000.");
     let router = create_router(db);
     serve_app(router).await?;
     Ok(())
 }
 
-fn create_router(db: Surreal<Client>) -> Router {
+fn create_router(db: Surreal<Db>) -> Router {
     Router::new()
         .route("/void_stranger", get(levels))
         .route("/void_stranger", post(upload))
