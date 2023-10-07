@@ -1,2 +1,3 @@
-pub mod levels;
-pub mod upload;
+pub mod get;
+pub mod post;
+pub mod teapot;

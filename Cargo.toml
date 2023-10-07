@@ -1,14 +1,16 @@
 [package]
 name = "voyager"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 publish = false
 
 [dependencies]
 axum = "0.6.20"
+chrono = "0.4.31"
 color-eyre = "0.6.2"
 serde = { version = "1.0.188", features = ["derive"] }
-surrealdb = { version = "1.0.0", features = ["kv-speedb"] }
+serde_json = "1.0.107"
+surrealdb = { version = "1.0.0", features = ["kv-speedb", "kv-mem"] }
 tokio = { version = "1.32.0", features = ["full"] }
 tracing = "0.1.37"
 tracing-subscriber = "0.3.17"

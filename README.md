@@ -18,26 +18,32 @@ Run `cargo build` to build in debug mode or `cargo build --release` to build in 
 
 ### Usage
 
-TBD. This **will** change in the future! Currently:
+This might change in the future! Currently:
 
 ```bash
-$ curl --data '{"level": {"name": "john java world", "data": "asdasd", "author": "john java"}, "inputs": "wasd"}' --header "Content-Type: application/json" localhost:3000/void_stranger
-"01HBYGJ3WM8D5347JYWKJN2C85" # the level's key, for editing
+$ curl --data '{"name": "john java world", "data": "asdasd", "author": "john java", "author_brand": 1, "inputs": "wasd", "burdens": 2}' --header "Content-Type: application/json" localhost:3000/void_stranger
+```
+```json
+{"key":"01HC4SDY2PQ956WBXJHERSD3NN"}
 ```
 
 ```bash
 $ curl localhost:3000/void_stranger
-[{"name":"john java world","data":"asdasd","author":"john java"}]
+```  
+```json
+[{"name":"john java world","data":"asdasd","author":"john java","author_brand":1,"burdens":2,"upload_date":"2023-10-07T10:02:50.838216987Z"},{"name":"john java world","data":"asdasd","author":"john java","author_brand":1,"burdens":2,"upload_date":"2023-10-07T10:13:28.587682489Z"}]
 ```
 
 ## To-do list
 
-- [ ] Use [tower_sessions](https://lib.rs/crates/tower-sessions) for session management & [deadpool](https://lib.rs/crates/deadpool) for an async connection pool.
 - [x] Use an [embedded SurrealDB database](https://surrealdb.com/docs/embedding/rust) instead for ease of starting, most likely [Speedb](https://www.speedb.io/).
-- [ ] Finalize data structures.
-- [ ] Use `serde::Value` instead of `Level`, `CreateLevel`, `PublicLevel`, `Key`, & maybe also `Record`.
-- [ ] Definitely use `serde::Value` for storing level data (JSON).
-- [ ] Log to a file (DEBUG) as well as to stdout (INFO).
+- [x] Finalize data structures. (mostly finished)
 - [ ] PUT router for editing levels.
+- [ ] Use `serde::Value` for storing level data (JSON).
+- [ ] Log to a file (DEBUG) as well as to stdout (INFO).
 - [ ] A level rating system (like/dislike, star rating, play count, completion count?).
+- [ ] Implement caching using one of [redis](https://lib.rs/crates/redis), [cached](https://lib.rs/crates/cached), etc.
 - [ ] General code clean-up, especially in the `server/routers/` directory.
+- [ ] Use [tower_sessions](https://lib.rs/crates/tower-sessions) for session management & [deadpool](https://lib.rs/crates/deadpool) for an async connection pool.
+- [ ] Write unit tests.
+- [ ] ~~Use `serde::Value` instead of `Level`, `CreateLevel`, `PublicLevel`, `Key`, & maybe also `Record`.~~
