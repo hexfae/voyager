@@ -1,49 +1,27 @@
 # Voyager
 
-Voyager is the server back-end for [Endless Void](https://github.com/Skirlez/void-stranger-endless-void), a level editor for [Void Stranger](https://store.steampowered.com/app/2121980/Void_Stranger/), a "2D sokoban-style puzzle game where every step counts."
+Voyager is the future server back-end for [Endless Void](https://github.com/Skirlez/void-stranger-endless-void), a level editor for [Void Stranger](https://store.steampowered.com/app/2121980/Void_Stranger/), a "2D sokoban-style puzzle game where every step counts."
 
-Currently, it handles POST requests to upload levels, and receives GET requests to send a list of levels. In the future, it will handle PUT requests to edit levels using a level-specific key.
+## The philosophy going forward
 
-You're unlikely to have a use for it, I'm open-sourcing it on principle and for practice.
+In terms of priorities for this project, generally, `idiomatic > small > fast`. Previously, Voyager's priorities have been something like `fast > small > idiomatic`, for some reason. Despite having a cool name, Voyager is a very simple project. At its core, it's a glorified key-value database (and its internal data structure currently reflects that), with its most complex feature being (ideally) a very simple level parsing/validation (essentially, "does this kind of look somewhat like how a level should?"). 
 
-## Building
+### Idiomatic
 
-Run `cargo build` to build in debug mode or `cargo build --release` to build in release mode. The compiled binary will be available in `target/debug/` or `target/release` respectively. See also the [Cargo build documentation](https://doc.rust-lang.org/cargo/commands/cargo-build.html).
+Idiomatic code is good not only for readability, but also for practice and for showing off. Since there's no real need to optimize for size nor for performance, why not write the most beautiful code possible?
 
-## Running
+### Small
 
-### Prerequisites
+Mostly referring to memory usage, it would generally be a good idea to decrease it, especially since the free VPS from Oracle where Voyager will be running only has 1GB of RAM. Thankfully, the average Void Stranger level is incredibly tiny (<1KB), and simply storing them and their key in a HashMap (or, currently, a DashMap) is incredibly difficult to mess up.
 
-- An open port on `3000`, which it will bind to.
+### Fast
 
-### Usage
-
-This might change in the future! Currently:
-
-```bash
-$ curl --data '{"name": "john java world", "data": "asdasd", "author": "john java", "author_brand": 1, "inputs": "wasd", "burdens": 2}' --header "Content-Type: application/json" localhost:3000/void_stranger
-```
-```json
-{"key":"01HC4SDY2PQ956WBXJHERSD3NN"}
-```
-
-```bash
-$ curl localhost:3000/void_stranger
-```  
-```json
-[{"name":"john java world","data":"asdasd","author":"john java","author_brand":1,"burdens":2,"upload_date":"2023-10-07T10:02:50.838216987Z"},{"name":"john java world","data":"asdasd","author":"john java","author_brand":1,"burdens":2,"upload_date":"2023-10-07T10:13:28.587682489Z"}]
-```
+Speed is a feature. Despite this, an end-user is unlikely to notice their level uploading in 400µs instead of 500µs. Rust and Axum are plenty fast enough, and Voyager is unlikely to have more than 2 concurrent users. Therefore, optimizing for speed, and the concept of speed in general, should be an afterthought, as striving for speed generally leads to premature optimization (speaking from experience).
 
 ## To-do list
 
-- [x] Use an [embedded SurrealDB database](https://surrealdb.com/docs/embedding/rust) instead for ease of starting, most likely [Speedb](https://www.speedb.io/).
-- [x] Finalize data structures. (mostly finished)
-- [ ] PUT router for editing levels.
-- [ ] Use `serde::Value` for storing level data (JSON).
-- [ ] Log to a file (DEBUG) as well as to stdout (INFO).
-- [ ] A level rating system (like/dislike, star rating, play count, completion count?).
-- [ ] Implement caching using one of [redis](https://lib.rs/crates/redis), [cached](https://lib.rs/crates/cached), etc.
-- [ ] General code clean-up, especially in the `server/routers/` directory.
-- [ ] Use [tower_sessions](https://lib.rs/crates/tower-sessions) for session management & [deadpool](https://lib.rs/crates/deadpool) for an async connection pool.
-- [ ] Write unit tests.
-- [ ] ~~Use `serde::Value` instead of `Level`, `CreateLevel`, `PublicLevel`, `Key`, & maybe also `Record`.~~
+- [ ] PUT router.
+- [ ] Improved logging.
+- [ ] Comprehensive testing.
+- [ ] Extensive documenting.
+- [ ] Appropriate simplifying.
