@@ -1,9 +1,9 @@
 use crate::{parser::Level, server::SharedAppState};
+use anyhow::Result;
 use axum::{
     extract::{ConnectInfo, State},
     http::StatusCode,
 };
-use color_eyre::Result;
 use std::net::SocketAddr;
 use tracing::{info, warn};
 use ulid::Ulid;

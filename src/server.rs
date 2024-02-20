@@ -1,9 +1,9 @@
 use crate::{parser::Level, routers};
+use anyhow::Result;
 use axum::{
     routing::{any, get, post, put},
     Router,
 };
-use color_eyre::Result;
 use dashmap::DashMap;
 use std::{net::SocketAddr, sync::Arc};
 use tracing::info;

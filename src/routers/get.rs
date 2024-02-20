@@ -1,9 +1,9 @@
 use crate::server::SharedAppState;
+use anyhow::Result;
 use axum::{
     extract::{ConnectInfo, State},
     http::StatusCode,
 };
-use color_eyre::eyre::Result;
 use std::net::SocketAddr;
 
 /// Returns a list of levels stored in the database.

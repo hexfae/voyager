@@ -1,5 +1,5 @@
+use anyhow::Result;
 use base64::{prelude::BASE64_STANDARD, Engine};
-use color_eyre::Result;
 use derive_more::Display;
 use nom::{
     bytes::complete::take_while1,

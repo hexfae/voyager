@@ -1,10 +1,10 @@
 use std::net::SocketAddr;
 
+use anyhow::Result;
 use axum::{
     extract::{ConnectInfo, State},
     http::StatusCode,
 };
-use color_eyre::eyre::Result;
 
 use crate::server::SharedAppState;
 

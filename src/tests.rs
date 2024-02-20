@@ -33,8 +33,8 @@ fn new_test_app() -> TestServer {
 #[cfg(test)]
 mod voyager_tests {
     use crate::tests::new_test_app;
+    use anyhow::Result;
     use axum::http::StatusCode;
-    use color_eyre::Result;
     use pretty_assertions::assert_eq;
     use ulid::Ulid;
 
