@@ -1,40 +1,26 @@
 use crate::server::SharedAppState;
-use anyhow::Result;
 use axum::{
     extract::{ConnectInfo, State},
     http::StatusCode,
 };
 use std::net::SocketAddr;
 
-/// Returns a list of levels stored in the database.
-///
-/// Returns a JSON array of JSON objects containing level metadata.
+/// Returns a comma-separated list of all levels stored in the database.
 ///
 /// The format is as follows:
 ///
-/// ```json
-/// {
-///     "name": String,
-///     "data": String,
-///     "author": String,
-///     "author_brand": Number,
-///     "burden": Number,
-///     "upload_date": String
-/// }
-/// ```
+/// `version|name|description|music|author|brand|burdens|tiles|objects`
 ///
-/// Note: See [Level] for documentation about the keys.
+/// Version is an integer (current version is 1). Name, description, music, and
+/// author are Base64-encoded strings. Brand is a 36-bit number. Burdens is a 4-bit
+/// number. Tiles and objects are level data, encoded using Endless Void's Black Hole
+/// Format (BHF).
 ///
-/// Returns 200 OK and a JSON array of levels if
-/// getting succeeded, or 500 INTERNAL SERVER ERROR
-/// and JSON null if something went wrong server-side.
-///
-/// # Errors
-/// Returns an error if the database is bad or something TODO: docs
+/// Returns 200 OK and a comma-separated list.
 pub async fn get(
     State(state): State<SharedAppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Result<(StatusCode, String), StatusCode> {
+) -> (StatusCode, String) {
     tracing::info!("GET sent by {}", addr.ip());
-    Ok((StatusCode::OK, state.levels()))
+    (StatusCode::OK, state.levels())
 }

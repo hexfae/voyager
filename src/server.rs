@@ -5,13 +5,18 @@ use axum::{
     Router,
 };
 use dashmap::DashMap;
-use std::{net::SocketAddr, sync::Arc};
+use serde::{Deserialize, Serialize};
+use std::{
+    fs::{read_to_string, write},
+    net::SocketAddr,
+    sync::Arc,
+};
 use tracing::info;
 use ulid::Ulid;
 
 pub type SharedAppState = Arc<AppState>;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct AppState {
     levels: DashMap<Ulid, Level>,
 }
@@ -24,11 +29,28 @@ impl AppState {
         })
     }
 
+    #[must_use]
+    pub fn load() -> SharedAppState {
+        let input = read_to_string("voyager.db");
+        input.map_or_else(
+            |_| Self::new(),
+            |level| Self::from(level.as_bytes()).unwrap_or_else(|_| Self::new()),
+        )
+    }
+
+    /// # Errors
+    /// Errors I/O TODO: write
+    pub fn save(&self) -> Result<()> {
+        let bytes = bincode::serialize(&self)?;
+        write("voyager.db", bytes)?;
+        Ok(())
+    }
+
     /// TODO
     /// # Errors
     /// This function will return an error if given invalid data lol
-    pub fn from(level: &str) -> Result<SharedAppState> {
-        let levels = ron::from_str(level)?;
+    pub fn from(level: &[u8]) -> Result<SharedAppState> {
+        let levels = bincode::deserialize(level)?;
         Ok(Arc::new(Self { levels }))
     }
 
@@ -42,6 +64,7 @@ impl AppState {
             .clone()
             .into_read_only()
             .values()
+            // TODO: can i return &[u8] for GET instead?
             .map(|level| level.data.to_string())
             .collect::<Vec<String>>()
             .join(",")
@@ -59,7 +82,7 @@ pub async fn start_voyager() -> Result<()> {
 }
 
 fn create_router() -> Router {
-    let levels = AppState::new();
+    let levels = AppState::load();
     Router::new()
         .route("/void_stranger", get(routers::get::get))
         .route("/void_stranger", post(routers::post::post))

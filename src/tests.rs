@@ -6,7 +6,7 @@ use axum::{
 use axum_test::TestServer;
 
 fn new_app() -> Router {
-    let level = include_str!("serialized.lvl");
+    let level = include_bytes!("serialized.lvl");
     let levels = AppState::from(level).expect("valid serialized database");
     Router::new()
         .route("/void_stranger", get(crate::routers::get::get))

@@ -1,10 +1,9 @@
-use std::net::SocketAddr;
-
 use anyhow::Result;
 use axum::{
     extract::{ConnectInfo, State},
     http::StatusCode,
 };
+use std::net::SocketAddr;
 
 use crate::server::SharedAppState;
 
@@ -14,35 +13,21 @@ use crate::server::SharedAppState;
 /// ULID and gets the current date and time, then uploads this information
 /// to the database, along with returning the [ULID](https://github.com/ulid/spec), used for editing/deleting.
 ///
-/// The format is as follows:
-///
-/// ```json
-/// {
-///     "name": String,
-///     "data": String,
-///     "author": String,
-///     "author_brand": Number,
-///     "inputs": String,
-///     "burdens": Number
-/// }
-/// ```
-///
-/// Note: See [Level] for documentation about the keys.
-///
-/// ```json
-/// {
-///     "key": String
-/// }
-/// ```
+/// TODO: write
 ///
 /// Returns 201 CREATED and a JSON object containing a ULID if created,
 /// 400 BAD REQUEST and a JSON null if the body is wrongly formatted, or
 /// 500 INTERNAL SERVER ERROR and JSON null if something else went wrong.
 ///
-/// # Errors
-/// This returns an error when an invalid key is given.
+// allow missing errors because it's not
+// really relevant for an axum project
+#[allow(
+    clippy::missing_errors_doc,
+    dead_code,
+    clippy::unused_async,
+    unused_variables
+)]
 // TODO: this entire function
-#[allow(dead_code, clippy::unused_async, unused_variables)]
 pub async fn put(
     // State(db): State<Surreal<Client>>,
     State(levels): State<SharedAppState>,

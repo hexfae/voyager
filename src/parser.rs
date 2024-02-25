@@ -14,8 +14,8 @@ const BASE64: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123
 const BLACK_HOLE_FORMAT: &[u8] =
     b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=!";
 
-#[derive(Debug, Display, Clone, Serialize, Deserialize)]
-pub struct Data(String);
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Data(Vec<u8>);
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Version(u8);
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
@@ -27,9 +27,9 @@ pub struct Music(String);
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Author(String);
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
-pub struct Brand(String);
+pub struct Brand(u64);
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
-pub struct Burdens(String);
+pub struct Burdens(u8);
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Tiles(String);
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
@@ -38,6 +38,9 @@ pub struct Objects(String);
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Level {
     pub data: Data,
+}
+
+pub struct ParsedLevel {
     pub version: Version,
     pub name: Name,
     pub description: Description,
@@ -49,23 +52,39 @@ pub struct Level {
     pub objects: Objects,
 }
 
-impl std::fmt::Display for Level {
+impl std::fmt::Display for ParsedLevel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Level \"{}\", by {}, level format {}\nDescription: \"{}\"\nMusic: {}\nBurdens: {}\nBrand: {}\nTiles: {}\nObject: {}", self.name, self.author, self.version, self.description, self.music, self.burdens, self.brand, self.tiles, self.objects)
     }
 }
 
+impl std::fmt::Display for Data {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            String::from_utf8(self.0.clone()).expect("valid level data")
+        )
+    }
+}
+
 impl Level {
+    #[must_use]
+    pub fn from(input: &[u8]) -> Self {
+        Self {
+            data: Data(input.to_vec()),
+        }
+    }
+
     /// # Errors
     /// Returns an error on invalid level data.
-    pub fn from(input: &[u8]) -> IResult<&[u8], Self> {
-        let (input, output) = parse_level(input)?;
+    pub fn parse(&self) -> IResult<&[u8], ParsedLevel> {
+        let (input, output) = parse_level(&self.data.0)?;
         Ok((input, output))
     }
 }
 
-fn parse_level(input: &[u8]) -> IResult<&[u8], Level> {
-    let data = String::from_utf8_lossy(input).to_string();
+fn parse_level(input: &[u8]) -> IResult<&[u8], ParsedLevel> {
     let (input, (version, name, description, music, author, brand, burdens, tiles, objects)) =
         tuple((
             version,
@@ -73,13 +92,12 @@ fn parse_level(input: &[u8]) -> IResult<&[u8], Level> {
             base64,
             base64,
             base64,
-            bits,
-            bits,
+            brand,
+            burdens,
             black_hole_format,
             black_hole_format,
         ))(input)?;
-    let level = Level {
-        data: Data(data),
+    let level = ParsedLevel {
         version: Version(version),
         name: Name(name),
         description: Description(description),
@@ -101,8 +119,12 @@ fn base64(input: &[u8]) -> IResult<&[u8], String> {
     map_res(preceded(char('|'), take_while1(is_base64)), from_base64)(input)
 }
 
-fn bits(input: &[u8]) -> IResult<&[u8], String> {
-    map_res(preceded(char('|'), take_while1(is_binary)), to_string)(input)
+fn brand(input: &[u8]) -> IResult<&[u8], u64> {
+    map_res(preceded(char('|'), take_while1(is_digit)), to_u64)(input)
+}
+
+fn burdens(input: &[u8]) -> IResult<&[u8], u8> {
+    map_res(preceded(char('|'), take_while1(is_digit)), to_u8)(input)
 }
 
 fn black_hole_format(input: &[u8]) -> IResult<&[u8], String> {
@@ -120,12 +142,12 @@ fn to_u8(input: &[u8]) -> Result<u8> {
     Ok(to_string(input)?.parse::<u8>()?)
 }
 
-fn to_string(input: &[u8]) -> Result<String> {
-    Ok(std::str::from_utf8(input)?.to_string())
+fn to_u64(input: &[u8]) -> Result<u64> {
+    Ok(to_string(input)?.parse::<u64>()?)
 }
 
-const fn is_binary(chr: u8) -> bool {
-    matches!(chr, b'0'..=b'1')
+fn to_string(input: &[u8]) -> Result<String> {
+    Ok(std::str::from_utf8(input)?.to_string())
 }
 
 const fn is_digit(chr: u8) -> bool {
