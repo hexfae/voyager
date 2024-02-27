@@ -1,7 +1,7 @@
 use crate::{parser::Level, routers};
 use anyhow::Result;
 use axum::{
-    routing::{any, get, post, put},
+    routing::{any, delete, get, post, put},
     Router,
 };
 use dashmap::DashMap;
@@ -63,6 +63,15 @@ impl AppState {
         self.levels.contains_key(input)
     }
 
+    pub fn delete(&self, input: &str) -> Result<bool> {
+        let key = input.parse::<Ulid>()?;
+        if self.levels.remove(&key).is_some() {
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
     #[must_use]
     pub fn levels(&self) -> String {
         self.levels
@@ -92,6 +101,7 @@ fn create_router() -> Router {
         .route("/void_stranger", get(routers::get::get))
         .route("/void_stranger", post(routers::post::post))
         .route("/void_stranger", put(routers::put::put))
+        .route("/void_stranger", delete(routers::delete::delete))
         .route("/void_stranger", any(routers::teapot::teapot))
         .with_state(levels)
 }

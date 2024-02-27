@@ -110,6 +110,7 @@ impl Level {
 }
 
 fn parse_level(input: &[u8]) -> IResult<&[u8], ParsedLevel> {
+    tracing::info!("{}", &String::from_utf8_lossy(input));
     let (
         input,
         (

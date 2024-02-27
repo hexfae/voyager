@@ -37,13 +37,15 @@ pub async fn put(
         return Err(StatusCode::BAD_REQUEST);
     }
     let key = &level[level.len() - 26..level.len()];
-    let level = &level[0..level.len() - 26];
+    let level = &level[0..level.len() - 27];
     let key = key.parse::<Ulid>().map_err(|why| {
         info!("PUT failed by {addr}; invalid key: {why}");
         StatusCode::UNAUTHORIZED
     })?;
     let mut level = Level::from(level);
-    let (_, parsed_level) = level.parse().map_err(|why| {
+    // no need for the parsed level,
+    // but parsing validates it
+    let (_, _) = level.parse().map_err(|why| {
         info!("PUT failed by {addr}; invalid level data: {why}");
         StatusCode::BAD_REQUEST
     })?;
@@ -51,7 +53,7 @@ pub async fn put(
         level.update_edited();
         levels.insert(key, level);
         info!("PUT success by {addr}.");
-        Ok(StatusCode::CREATED)
+        Ok(StatusCode::OK)
     } else {
         info!("PUT fail by {addr}; level not in database");
         Err(StatusCode::NOT_FOUND)
