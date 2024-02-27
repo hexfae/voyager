@@ -30,7 +30,7 @@ pub async fn post(
 ) -> Result<(StatusCode, String), StatusCode> {
     info!("POST sent by {}: {}", addr.ip(), level);
 
-    let level = Level::from(level.as_bytes());
+    let level = Level::from(&level);
     let (_, parsed_level) = level.parse().map_err(|why| {
         warn!("level could not be prased: {why}");
         StatusCode::BAD_REQUEST

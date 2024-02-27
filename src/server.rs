@@ -59,6 +59,11 @@ impl AppState {
     }
 
     #[must_use]
+    pub fn contains(&self, input: &Ulid) -> bool {
+        self.levels.contains_key(input)
+    }
+
+    #[must_use]
     pub fn levels(&self) -> String {
         self.levels
             .clone()

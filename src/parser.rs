@@ -9,6 +9,7 @@ use nom::{
     IResult,
 };
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 
 const BASE64: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
 const BLACK_HOLE_FORMAT: &[u8] =
@@ -34,6 +35,10 @@ pub struct Burdens(u8);
 pub struct Tiles(String);
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Objects(String);
+#[derive(Debug, Display, Clone, Serialize, Deserialize)]
+pub struct Uploaded(String);
+#[derive(Debug, Display, Clone, Serialize, Deserialize)]
+pub struct Edited(String);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Level {
@@ -50,6 +55,8 @@ pub struct ParsedLevel {
     pub burdens: Burdens,
     pub tiles: Tiles,
     pub objects: Objects,
+    pub uploaded: Uploaded,
+    pub edited: Edited,
 }
 
 impl std::fmt::Display for ParsedLevel {
@@ -70,10 +77,17 @@ impl std::fmt::Display for Data {
 
 impl Level {
     #[must_use]
-    pub fn from(input: &[u8]) -> Self {
-        Self {
-            data: Data(input.to_vec()),
-        }
+    pub fn from(input: &str) -> Self {
+        // 2024-02-27
+        let now = OffsetDateTime::now_utc();
+        // 20240227
+        let now = now.date().to_string().replace('-', "");
+        // remove last |
+        let asd = &input.as_bytes()[0..input.len() - 1];
+        // 20240227|20240227
+        let uploaded_edited = format!("{now}|{now}");
+        let data = [asd, uploaded_edited.as_bytes()].concat();
+        Self { data: Data(data) }
     }
 
     /// # Errors
@@ -85,18 +99,34 @@ impl Level {
 }
 
 fn parse_level(input: &[u8]) -> IResult<&[u8], ParsedLevel> {
-    let (input, (version, name, description, music, author, brand, burdens, tiles, objects)) =
-        tuple((
+    let (
+        input,
+        (
             version,
-            base64,
-            base64,
-            base64,
-            base64,
+            name,
+            description,
+            music,
+            author,
             brand,
             burdens,
-            black_hole_format,
-            black_hole_format,
-        ))(input)?;
+            tiles,
+            objects,
+            uploaded,
+            edited,
+        ),
+    ) = tuple((
+        version,
+        base64,
+        base64,
+        base64,
+        base64,
+        brand,
+        burdens,
+        black_hole_format,
+        black_hole_format,
+        date,
+        date,
+    ))(input)?;
     let level = ParsedLevel {
         version: Version(version),
         name: Name(name),
@@ -107,6 +137,8 @@ fn parse_level(input: &[u8]) -> IResult<&[u8], ParsedLevel> {
         burdens: Burdens(burdens),
         tiles: Tiles(tiles),
         objects: Objects(objects),
+        uploaded: Uploaded(uploaded),
+        edited: Edited(edited),
     };
     Ok((input, level))
 }
@@ -132,6 +164,10 @@ fn black_hole_format(input: &[u8]) -> IResult<&[u8], String> {
         preceded(char('|'), take_while1(is_black_hole_format)),
         to_string,
     )(input)
+}
+
+fn date(input: &[u8]) -> IResult<&[u8], String> {
+    map_res(preceded(char('|'), take_while1(is_digit)), to_string)(input)
 }
 
 fn from_base64(input: &[u8]) -> Result<String> {
