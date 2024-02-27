@@ -90,6 +90,17 @@ impl Level {
         Self { data: Data(data) }
     }
 
+    pub fn update_edited(&mut self) {
+        let without_edited = &self.data.0[0..self.data.0.len() - 8];
+
+        // 2024-02-27
+        let now = OffsetDateTime::now_utc();
+        // 20240227
+        let now = now.date().to_string().replace('-', "");
+
+        self.data.0 = [without_edited, now.as_bytes()].concat();
+    }
+
     /// # Errors
     /// Returns an error on invalid level data.
     pub fn parse(&self) -> IResult<&[u8], ParsedLevel> {

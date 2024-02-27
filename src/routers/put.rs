@@ -42,12 +42,13 @@ pub async fn put(
         info!("PUT failed by {addr}; invalid key: {why}");
         StatusCode::UNAUTHORIZED
     })?;
-    let level = Level::from(level);
+    let mut level = Level::from(level);
     let (_, parsed_level) = level.parse().map_err(|why| {
         info!("PUT failed by {addr}; invalid level data: {why}");
         StatusCode::BAD_REQUEST
     })?;
     if levels.contains(&key) {
+        level.update_edited();
         levels.insert(key, level);
         info!("PUT success by {addr}.");
         Ok(StatusCode::CREATED)
