@@ -99,6 +99,7 @@ fn create_router() -> Router {
     let levels = AppState::load();
     Router::new()
         .route("/void_stranger", get(routers::get::get))
+        .route("/void_stranger/:key", get(routers::get::levels_exist))
         .route("/void_stranger", post(routers::post::post))
         .route("/void_stranger", put(routers::put::put))
         .route("/void_stranger", delete(routers::delete::delete))
