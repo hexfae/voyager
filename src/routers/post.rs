@@ -30,18 +30,20 @@ pub async fn post(
 ) -> Result<(StatusCode, String), StatusCode> {
     info!("POST sent by {}: {}", addr.ip(), level);
 
-    let level = Level::from(&level);
-    let (_, parsed_level) = level.parse().map_err(|why| {
-        warn!("level could not be prased: {why}");
+    // TODO: remove redundancy
+    let parsed_level = Level::parse(&level).map_err(|why| {
+        warn!("level could not be parsed: {why}");
+        StatusCode::BAD_REQUEST
+    })?;
+
+    let level = Level::from(&level).map_err(|why| {
+        warn!("level could not be parsed: {why}");
         StatusCode::BAD_REQUEST
     })?;
 
     let id = Ulid::new();
 
-    info!(
-        "POST completed: level {} by {} created",
-        parsed_level.name, parsed_level.author
-    );
+    info!("POST completed:\n{parsed_level}");
     state.insert(id, level);
 
     if let Err(why) = state.save() {

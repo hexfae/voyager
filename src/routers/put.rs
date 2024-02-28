@@ -1,3 +1,4 @@
+use crate::{parser::Level, server::SharedAppState};
 use anyhow::Result;
 use axum::{
     extract::{ConnectInfo, State},
@@ -5,9 +6,6 @@ use axum::{
 };
 use std::net::SocketAddr;
 use tracing::{debug, info};
-use ulid::Ulid;
-
-use crate::{parser::Level, server::SharedAppState};
 
 /// Updates an already uploaded level in the database.
 ///
@@ -31,24 +29,27 @@ pub async fn put(
     info!("PUT sent by {addr}");
     debug!("PUT sent by {addr}: {level}");
 
-    // definitely invalid if smaller than a ulid key
-    if level.len() < ulid::ULID_LEN {
+    // TODO: improve
+    let (level, key) = level.rsplit_once('|').ok_or_else(|| {
         info!("PUT failed by {addr}; input was too small");
-        return Err(StatusCode::BAD_REQUEST);
-    }
-    let key = &level[level.len() - 26..level.len()];
-    let level = &level[0..level.len() - 27];
-    let key = key.parse::<Ulid>().map_err(|why| {
+        StatusCode::BAD_REQUEST
+    })?;
+    let key = key.parse().map_err(|why| {
         info!("PUT failed by {addr}; invalid key: {why}");
         StatusCode::UNAUTHORIZED
     })?;
-    let mut level = Level::from(level);
     // no need for the parsed level,
     // but parsing validates it
-    let (_, _) = level.parse().map_err(|why| {
+    Level::parse(level).map_err(|why| {
         info!("PUT failed by {addr}; invalid level data: {why}");
         StatusCode::BAD_REQUEST
     })?;
+    // TODO: fix redundancy below
+    let mut level = Level::from(level).map_err(|why| {
+        info!("PUT failed by {addr}; invalid level data: {why}");
+        StatusCode::BAD_REQUEST
+    })?;
+
     if levels.contains(&key) {
         level.update_edited();
         levels.insert(key, level);
