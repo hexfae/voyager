@@ -30,7 +30,7 @@ impl AppState {
     }
 
     /// # Panics
-    /// Panics if a database if found, but deserializing it fails.
+    /// Panics if a database is found, but deserializing it fails.
     #[must_use]
     pub fn load() -> SharedAppState {
         let input = read("voyager.db");
