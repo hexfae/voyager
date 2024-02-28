@@ -7,11 +7,11 @@ use axum::{
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::{read_to_string, write},
+    fs::{read, read_to_string, write},
     net::SocketAddr,
     sync::Arc,
 };
-use tracing::info;
+use tracing::{info, warn};
 use ulid::Ulid;
 
 pub type SharedAppState = Arc<AppState>;
@@ -29,12 +29,20 @@ impl AppState {
         })
     }
 
+    /// # Panics
+    /// Panics if a database if found, but deserializing it fails.
     #[must_use]
     pub fn load() -> SharedAppState {
-        let input = read_to_string("voyager.db");
+        let input = read("voyager.db");
         input.map_or_else(
-            |_| Self::new(),
-            |level| Self::from(level.as_bytes()).unwrap_or_else(|_| Self::new()),
+            |_| {
+                info!("Existing database not found!");
+                Self::new()
+            },
+            |level| {
+                info!("Existing database found!");
+                Self::from(&level).expect("valid database file")
+            },
         )
     }
 
