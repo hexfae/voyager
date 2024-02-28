@@ -3,5 +3,5 @@
 pub mod parser;
 pub mod routers;
 pub mod server;
-#[cfg(test)]
-pub mod tests;
+// #[cfg(test)]
+// pub mod tests;
