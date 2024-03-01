@@ -20,22 +20,22 @@ use ulid::Ulid;
 /// Returns 201 CREATED and a ULID key if successful. Returns 400 BAD REQUEST if
 /// the level was invalid.
 pub async fn post(
-    State(state): State<SharedAppState>,
+    State(db): State<SharedAppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     level: String,
 ) -> Result<(StatusCode, String)> {
     info!("POST sent by {}: {}", addr.ip(), level);
 
     // TODO: remove redundancy
-    let parsed_level = Level::parse(&level)?;
+    let level = Level::new(level);
+    let mut parsed = level.into_parsed()?;
+    parsed.set_dates_to_now();
+    info!("POST completed:\n{parsed}");
 
-    let level = Level::from(&level)?;
-
+    let level = parsed.into_level();
     let id = Ulid::new();
 
-    info!("POST completed:\n{parsed_level}");
-    state.insert(id, level);
-
-    state.save();
+    db.insert(id, level);
+    db.save();
     Ok((StatusCode::CREATED, id.to_string()))
 }

@@ -19,26 +19,24 @@ use tracing::info;
 /// FOUND on if somehow, the level data and key are valid, but the key is
 /// not associated with any uploaded level.
 pub async fn put(
-    State(levels): State<SharedAppState>,
+    State(db): State<SharedAppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    level: String,
+    input: String,
 ) -> Result<StatusCode> {
     let addr = addr.ip();
-    info!("PUT sent by {addr}: {level}");
+    info!("PUT sent by {addr}: {input}");
 
     // TODO: improve
-    let (level, key) = level.rsplit_once('|').ok_or(Error::InvalidStructure)?;
-    let key = key.parse()?;
-    let mut level = Level::from(level)?;
+    let (level, key) = Level::new_from_put(&input)?;
+    let mut parsed = level.into_parsed()?;
 
-    let old_level = levels.get(&key);
-    if old_level.is_none() {
-        info!("PUT fail by {addr}; level not in database");
-        return Err(Error::LevelNotFound);
-    }
-    // TODO: not clone
-    level.update_edited(old_level.expect("should never happen").clone())?;
-    levels.insert(key, level);
+    // must clone because dashmap will deadlock otherwise
+    let old_level = db.get(&key).ok_or(Error::LevelNotFound)?.clone();
+    parsed.set_dates_to_now();
+    parsed.set_uploaded_from(old_level)?;
+    let level = parsed.into_level();
+    db.insert(key, level);
+    db.save();
     info!("PUT success by {addr}.");
     Ok(StatusCode::OK)
 }

@@ -14,11 +14,11 @@ use tracing::info;
 /// key has no matching level in the database. Returns 400 BAD REQEUST
 /// on invalid key.
 pub async fn delete(
-    State(levels): State<SharedAppState>,
+    State(db): State<SharedAppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     key: String,
 ) -> Result<StatusCode> {
     let addr = addr.ip();
     info!("DELETE sent by {addr}");
-    levels.delete(&key)
+    db.delete(&key)
 }

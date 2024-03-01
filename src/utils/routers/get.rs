@@ -20,16 +20,16 @@ use ulid::Ulid;
 ///
 /// Returns 200 OK and a comma-separated list.
 pub async fn get(
-    State(state): State<SharedAppState>,
+    State(db): State<SharedAppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> (StatusCode, String) {
     info!("GET sent by {}", addr.ip());
-    (StatusCode::OK, state.levels())
+    (StatusCode::OK, db.levels())
 }
 
 pub async fn levels_exist(
     Path(keys): Path<String>,
-    State(state): State<SharedAppState>,
+    State(db): State<SharedAppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> Result<(StatusCode, String)> {
     let addr = addr.ip();
@@ -45,7 +45,7 @@ pub async fn levels_exist(
     }
     let found = keys
         .iter()
-        .map(|key| i32::from(state.contains(key)).to_string())
+        .map(|key| i32::from(db.contains(key)).to_string())
         .collect::<Vec<String>>();
     let existing = found.join("");
     info!(
