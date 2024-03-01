@@ -51,6 +51,7 @@ pub async fn orphanage(
 
     let ssn = key.parse()?;
     db.adopt_orphan(&ssn)?;
+    db.save();
 
     Ok(StatusCode::OK)
 }
