@@ -20,6 +20,7 @@ pub type SharedAppState = Arc<AppState>;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AppState {
     levels: DashMap<Ulid, Level>,
+    orphans: DashMap<Ulid, Level>,
 }
 
 impl AppState {
@@ -27,6 +28,7 @@ impl AppState {
     pub fn new() -> SharedAppState {
         Arc::new(Self {
             levels: DashMap::new(),
+            orphans: DashMap::new(),
         })
     }
 
@@ -65,16 +67,26 @@ impl AppState {
     /// This function will return an error if given invalid data lol
     pub fn from(level: &[u8]) -> Result<SharedAppState> {
         let levels = bincode::deserialize(level)?;
-        Ok(Arc::new(Self { levels }))
+        Ok(Arc::new(levels))
     }
 
     pub fn insert(&self, key: Ulid, level: Level) {
         self.levels.insert(key, level);
     }
 
+    pub fn insert_orphan(&self, key: Ulid, level: Level) {
+        self.orphans.insert(key, level);
+    }
+
     #[must_use]
     pub fn contains(&self, input: &Ulid) -> bool {
         self.levels.contains_key(input)
+    }
+
+    pub fn adopt_orphan(&self, input: &Ulid) -> Result<()> {
+        let (level, key) = self.orphans.remove(input).ok_or(Error::LevelNotFound)?;
+        self.insert(level, key);
+        Ok(())
     }
 
     #[must_use]
@@ -120,6 +132,7 @@ fn create_router() -> Router {
         .route("/voyager", get(routers::get::get))
         .route("/voyager/:key", get(routers::get::levels_exist))
         .route("/voyager", post(routers::post::post))
+        .route("/voyager/orphanage", post(routers::post::orphanage))
         .route("/voyager", put(routers::put::put))
         .route("/voyager", delete(routers::delete::delete))
         .route("/voyager", any(routers::teapot::teapot))

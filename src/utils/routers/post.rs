@@ -24,7 +24,8 @@ pub async fn post(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     level: String,
 ) -> Result<(StatusCode, String)> {
-    info!("POST sent by {}: {}", addr.ip(), level);
+    let addr = addr.ip();
+    info!("POST sent by {addr}: {level}");
 
     // TODO: remove redundancy
     let level = Level::new(level);
@@ -35,7 +36,21 @@ pub async fn post(
     let level = parsed.into_level();
     let id = Ulid::new();
 
-    db.insert(id, level);
+    db.insert_orphan(id, level);
     db.save();
     Ok((StatusCode::CREATED, id.to_string()))
+}
+
+pub async fn orphanage(
+    State(db): State<SharedAppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    key: String,
+) -> Result<StatusCode> {
+    let addr = addr.ip();
+    info!("ADOPTION sent by {addr}");
+
+    let ssn = key.parse()?;
+    db.adopt_orphan(&ssn)?;
+
+    Ok(StatusCode::OK)
 }
