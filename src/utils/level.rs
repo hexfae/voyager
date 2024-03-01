@@ -1,4 +1,4 @@
-use anyhow::Result;
+use crate::prelude::*;
 use base64::{prelude::BASE64_STANDARD, Engine};
 use derive_more::Display;
 use itertools::Itertools;
@@ -7,6 +7,21 @@ use time::OffsetDateTime;
 
 const BLACK_HOLE_FORMAT: &str =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=!";
+const BRAND_36_BITS: u64 = 68_719_476_735;
+const BURDENS_4_BITS: u8 = 31;
+const VALID_MUSIC: [&str; 11] = [
+    "",
+    "msc_001",
+    "msc_dungeon_wings",
+    "msc_beecircle",
+    "msc_dungeongroove",
+    "msc_013",
+    "msc_gorcircle_lo",
+    "msc_levcircle",
+    "msc_cifcircle",
+    "msc_beesong",
+    "msc_monstrail",
+];
 
 // TODO: not pub
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,7 +54,7 @@ pub struct Level {
     pub data: Data,
 }
 
-pub struct ParsedLevel {
+pub struct Parsed {
     version: Version,
     name: Name,
     description: Description,
@@ -53,9 +68,9 @@ pub struct ParsedLevel {
     edited: Edited,
 }
 
-impl std::fmt::Display for ParsedLevel {
+impl std::fmt::Display for Parsed {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Version: {}\nName: {}\nDescription: {}\nMusic: {}\nAuthor: {}\nBrand: {}\nBurdens: {}\nTiles: {}\nObjects{}\nUploaded: {}\nEdited: {}", self.version, self.name, self.description, self.music, self.author, self.brand, self.burdens, self.tiles, self.objects, self.uploaded, self.edited)
+        write!(f, "Version: {}\nName: {}\nDescription: {}\nMusic: {}\nAuthor: {}\nBrand: {}\nBurdens: {}\nTiles: {}\nObjects: {}\nUploaded: {}\nEdited: {}", self.version, self.name, self.description, self.music, self.author, self.brand, self.burdens, self.tiles, self.objects, self.uploaded, self.edited)
     }
 }
 
@@ -74,28 +89,8 @@ impl std::fmt::Display for Data {
     }
 }
 
-const BRAND_36_BITS: u64 = 68_719_476_735;
-const BURDENS_4_BITS: u8 = 31;
-const VALID_MUSIC: [&str; 11] = [
-    "",
-    "msc_001",
-    "msc_dungeon_wings",
-    "msc_beecircle",
-    "msc_dungeongroove",
-    "msc_013",
-    "msc_gorcircle_lo",
-    "msc_levcircle",
-    "msc_cifcircle",
-    "msc_beesong",
-    "msc_monstrail",
-];
-
 impl Level {
-    pub fn to_parsed(&self) -> Result<ParsedLevel> {
-        Self::parse(String::from_utf8(self.data.0.clone())?.as_str())
-    }
-
-    pub fn parse(input: &str) -> Result<ParsedLevel> {
+    pub fn parse(input: &str) -> Result<Parsed> {
         let (
             version,
             name,
@@ -111,45 +106,59 @@ impl Level {
         ) = input
             .splitn(11, '|')
             .collect_tuple()
-            .ok_or_else(|| anyhow::anyhow!("missing"))?;
-        let version = version.parse::<u8>()?;
+            .ok_or(Error::InvalidStructure)?;
+        let version = version.parse::<u8>().map_err(|_| Error::InvalidVersion)?;
         if version != 1 {
-            return Err(anyhow::anyhow!("invalid version"));
+            return Err(Error::InvalidVersion);
         }
         // TODO: decide character limits
-        let name = String::from_utf8(BASE64_STANDARD.decode(name)?)?;
-        let description = String::from_utf8(BASE64_STANDARD.decode(description)?)?;
-        let music = String::from_utf8(BASE64_STANDARD.decode(music)?)?;
+        let name = String::from_utf8(
+            BASE64_STANDARD
+                .decode(name)
+                .map_err(|_| Error::InvalidName)?,
+        )
+        .map_err(|_| Error::InvalidName)?;
+        let description = String::from_utf8(
+            BASE64_STANDARD
+                .decode(description)
+                .map_err(|_| Error::InvalidDescription)?,
+        )
+        .map_err(|_| Error::InvalidDescription)?;
+        let music = String::from_utf8(
+            BASE64_STANDARD
+                .decode(music)
+                .map_err(|_| Error::InvalidMusic)?,
+        )
+        .map_err(|_| Error::InvalidMusic)?;
         if !VALID_MUSIC.contains(&music.as_str()) {
-            return Err(anyhow::anyhow!("invalid music"));
+            return Err(Error::InvalidMusic);
         }
-        let author = String::from_utf8(BASE64_STANDARD.decode(author)?)?;
-        let brand = brand.parse::<u64>()?;
+        let author = String::from_utf8(
+            BASE64_STANDARD
+                .decode(author)
+                .map_err(|_| Error::InvalidAuthor)?,
+        )
+        .map_err(|_| Error::InvalidAuthor)?;
+        let brand = brand.parse::<u64>().map_err(|_| Error::InvalidBrand)?;
         if brand > BRAND_36_BITS {
-            return Err(anyhow::anyhow!("invalid brand"));
+            return Err(Error::InvalidBrand);
         }
-        // if !uploaded.is_empty() {
-        //     return Err(anyhow::anyhow!("upload date should be empty"));
-        // }
-        // if !edited.is_empty() {
-        //     return Err(anyhow::anyhow!("last edit date should be empty"));
-        // }
-        let burdens = burdens.parse::<u8>()?;
+        let burdens = burdens.parse::<u8>().map_err(|_| Error::InvalidBurdens)?;
         if burdens > BURDENS_4_BITS {
-            return Err(anyhow::anyhow!("invalid burdens"));
+            return Err(Error::InvalidBurdens);
         }
         // TODO: is there some way to actually validate level data?
         // if any chars are invalid
         if tiles.chars().any(|char| !BLACK_HOLE_FORMAT.contains(char)) {
-            return Err(anyhow::anyhow!("invalid tiles"));
+            return Err(Error::InvalidTiles);
         }
         if objects
             .chars()
             .any(|char| !BLACK_HOLE_FORMAT.contains(char))
         {
-            return Err(anyhow::anyhow!("invalid objects"));
+            return Err(Error::InvalidObjects);
         }
-        Ok(ParsedLevel {
+        Ok(Parsed {
             version: Version(version),
             name: Name(name),
             description: Description(description),
@@ -183,19 +192,45 @@ impl Level {
         let number_of_fields = input.split('|').collect_vec().len();
         match number_of_fields {
             11 => Self::from_post(input),
-            12 => todo!(),
-            _ => todo!(),
+            _ => Err(Error::InvalidStructure),
         }
     }
 
-    pub fn update_edited(&mut self) {
-        let without_edited = &self.data.0[0..self.data.0.len() - 8];
+    pub fn update_edited(&mut self, old_level: Self) -> Result<()> {
+        let string = String::from_utf8(old_level.data.0).map_err(Error::InvalidLevel)?;
+        let (
+            version,
+            name,
+            description,
+            music,
+            author,
+            brand,
+            uploaded,
+            edited,
+            burdens,
+            tiles,
+            objects,
+        ) = string
+            .splitn(11, '|')
+            .collect_tuple()
+            .ok_or(Error::InternalServerError)?;
 
         // 2024-02-27
         let now = OffsetDateTime::now_utc();
         // 20240227
         let now = now.date().to_string().replace('-', "");
 
-        self.data.0 = [without_edited, now.as_bytes()].concat();
+        if edited == now {
+            return Ok(());
+        }
+
+        tracing::info!("{self}");
+
+        let new_data = format!("{version}|{name}|{description}|{music}|{author}|{brand}|{uploaded}|{now}|{burdens}|{tiles}|{objects}|");
+        self.data.0 = new_data.into_bytes();
+
+        tracing::info!("{self}");
+
+        Ok(())
     }
 }

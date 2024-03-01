@@ -1,5 +1,4 @@
-use crate::server::SharedAppState;
-use anyhow::Result;
+use crate::prelude::*;
 use axum::{
     extract::{ConnectInfo, State},
     http::StatusCode,
@@ -18,18 +17,8 @@ pub async fn delete(
     State(levels): State<SharedAppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     key: String,
-) -> Result<StatusCode, StatusCode> {
+) -> Result<StatusCode> {
     let addr = addr.ip();
-    info!("DELETE sent by {}", addr);
-    let deleted = levels.delete(&key).map_err(|why| {
-        info!("DELETE failed by {addr}; invalid key: {why}");
-        StatusCode::BAD_REQUEST
-    })?;
-    if deleted {
-        info!("DELETE success by {addr}");
-        Ok(StatusCode::NO_CONTENT)
-    } else {
-        info!("DELETE failed by {addr}; level not found");
-        Err(StatusCode::NOT_FOUND)
-    }
+    info!("DELETE sent by {addr}");
+    levels.delete(&key)
 }

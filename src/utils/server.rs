@@ -1,13 +1,14 @@
-use crate::{parser::Level, routers};
-use anyhow::Result;
+use super::routers;
+use crate::prelude::*;
 use axum::{
+    http::StatusCode,
     routing::{any, delete, get, post, put},
     Router,
 };
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::{read, read_to_string, write},
+    fs::{read, write},
     net::SocketAddr,
     sync::Arc,
 };
@@ -48,10 +49,15 @@ impl AppState {
 
     /// # Errors
     /// Errors I/O TODO: write
-    pub fn save(&self) -> Result<()> {
-        let bytes = bincode::serialize(&self)?;
-        write("voyager.db", bytes)?;
-        Ok(())
+    pub fn save(&self) {
+        match bincode::serialize(&self) {
+            Ok(bytes) => {
+                if let Err(why) = write("voyager.db", bytes) {
+                    warn!("database could not be saved: {why}");
+                };
+            }
+            Err(_) => todo!(),
+        }
     }
 
     /// TODO
@@ -71,12 +77,17 @@ impl AppState {
         self.levels.contains_key(input)
     }
 
-    pub fn delete(&self, input: &str) -> Result<bool> {
+    #[must_use]
+    pub fn get(&self, input: &Ulid) -> Option<dashmap::mapref::one::Ref<'_, ulid::Ulid, Level>> {
+        self.levels.get(input)
+    }
+
+    pub fn delete(&self, input: &str) -> Result<StatusCode> {
         let key = input.parse::<Ulid>()?;
         if self.levels.remove(&key).is_some() {
-            Ok(true)
+            Ok(StatusCode::NO_CONTENT)
         } else {
-            Ok(false)
+            Err(Error::LevelNotFound)
         }
     }
 

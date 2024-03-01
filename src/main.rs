@@ -1,10 +1,10 @@
-use anyhow::Result;
-use tracing::info;
-use voyager::server::start_voyager;
+mod error;
+mod prelude;
+mod utils;
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> prelude::Result<()> {
     tracing_subscriber::fmt::init();
-    info!("Voyager is launching.");
-    start_voyager().await
+    tracing::info!("Voyager is launching.");
+    utils::server::start_voyager().await
 }

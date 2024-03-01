@@ -1,11 +1,10 @@
-use crate::{parser::Level, server::SharedAppState};
-use anyhow::Result;
+use crate::prelude::*;
 use axum::{
     extract::{ConnectInfo, State},
     http::StatusCode,
 };
 use std::net::SocketAddr;
-use tracing::{error, info, warn};
+use tracing::info;
 use ulid::Ulid;
 
 /// Uploads a level to the database (if valid) and returns the ULID key to it.
@@ -20,34 +19,23 @@ use ulid::Ulid;
 ///
 /// Returns 201 CREATED and a ULID key if successful. Returns 400 BAD REQUEST if
 /// the level was invalid.
-// allow missing errors because it's not
-// really relevant for an axum project
-#[allow(clippy::missing_errors_doc)]
 pub async fn post(
     State(state): State<SharedAppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     level: String,
-) -> Result<(StatusCode, String), StatusCode> {
+) -> Result<(StatusCode, String)> {
     info!("POST sent by {}: {}", addr.ip(), level);
 
     // TODO: remove redundancy
-    let parsed_level = Level::parse(&level).map_err(|why| {
-        warn!("level could not be parsed: {why}");
-        StatusCode::BAD_REQUEST
-    })?;
+    let parsed_level = Level::parse(&level)?;
 
-    let level = Level::from(&level).map_err(|why| {
-        warn!("level could not be parsed: {why}");
-        StatusCode::BAD_REQUEST
-    })?;
+    let level = Level::from(&level)?;
 
     let id = Ulid::new();
 
     info!("POST completed:\n{parsed_level}");
     state.insert(id, level);
 
-    if let Err(why) = state.save() {
-        error!("database could not be saved! {why}");
-    };
+    state.save();
     Ok((StatusCode::CREATED, id.to_string()))
 }

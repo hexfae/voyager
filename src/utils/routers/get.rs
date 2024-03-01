@@ -1,4 +1,4 @@
-use crate::server::SharedAppState;
+use crate::prelude::*;
 use axum::{
     extract::{ConnectInfo, Path, State},
     http::StatusCode,
@@ -27,12 +27,11 @@ pub async fn get(
     (StatusCode::OK, state.levels())
 }
 
-#[allow(clippy::missing_panics_doc)]
 pub async fn levels_exist(
     Path(keys): Path<String>,
     State(state): State<SharedAppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Result<(StatusCode, String), StatusCode> {
+) -> Result<(StatusCode, String)> {
     let addr = addr.ip();
     info!("GET levels check sent by {addr}");
     let split_keys = keys.split(',').collect::<Vec<&str>>();
@@ -42,7 +41,7 @@ pub async fn levels_exist(
         .collect::<Vec<Ulid>>();
     if keys.len() != split_keys.len() {
         info!("GET levels check failed by {addr}; one or more keys were invalid!");
-        return Err(StatusCode::BAD_REQUEST);
+        return Err(Error::LevelNotFound);
     }
     let found = keys
         .iter()
