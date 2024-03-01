@@ -11,7 +11,10 @@ use std::{
     fs::{read, write},
     net::SocketAddr,
     sync::Arc,
+    time::Duration,
 };
+use tokio::signal;
+use tower_http::timeout::TimeoutLayer;
 use tracing::{info, warn};
 use ulid::Ulid;
 
@@ -137,6 +140,7 @@ fn create_router() -> Router {
         .route("/voyager", delete(routers::delete::delete))
         .route("/voyager", any(routers::teapot::teapot))
         .with_state(levels)
+        .layer(TimeoutLayer::new(Duration::from_secs(10)))
 }
 
 async fn serve_app(app: Router) -> Result<()> {
@@ -145,6 +149,31 @@ async fn serve_app(app: Router) -> Result<()> {
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
+    .with_graceful_shutdown(shutdown_signal())
     .await?;
     Ok(())
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        () = ctrl_c => {},
+        () = terminate => {},
+    }
 }
