@@ -1,4 +1,5 @@
 pub use crate::error::Error;
+pub use crate::error::NumberError;
 pub use crate::error::StringError;
 pub use crate::utils::level::Level;
 pub use crate::utils::server::SharedAppState;

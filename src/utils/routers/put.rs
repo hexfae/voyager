@@ -36,7 +36,6 @@ pub async fn put(
     parsed.set_uploaded_from(old_level)?;
     let level = parsed.into_level();
     db.insert(key, level);
-    db.save();
     info!("PUT success by {addr}.");
     Ok(StatusCode::OK)
 }

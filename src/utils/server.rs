@@ -75,10 +75,12 @@ impl AppState {
 
     pub fn insert(&self, key: Ulid, level: Level) {
         self.levels.insert(key, level);
+        self.save();
     }
 
     pub fn insert_orphan(&self, key: Ulid, level: Level) {
         self.orphans.insert(key, level);
+        self.save();
     }
 
     #[must_use]

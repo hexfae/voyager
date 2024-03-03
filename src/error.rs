@@ -2,35 +2,25 @@ use axum::http::StatusCode;
 use tracing::{info, warn};
 
 #[derive(thiserror::Error, Debug)]
-// i don't want an enum with the name "String" lol
-#[allow(clippy::module_name_repetitions)]
-pub enum StringError {
-    #[error("base64 error: {0}")]
-    Base64(#[from] base64::DecodeError),
-    #[error("utf8 error: {0}")]
-    FromUtf8(#[from] std::string::FromUtf8Error),
-}
-
-#[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("invalid request structure")]
     InvalidStructure,
-    #[error("invalid format version")]
-    InvalidVersion,
+    #[error("invalid format version: {0}")]
+    InvalidVersion(NumberError),
     #[error("invalid name: {0}")]
     InvalidName(StringError),
     #[error("invalid description: {0}")]
     InvalidDescription(StringError),
     #[error("invalid music: {0}")]
     InvalidMusic(StringError),
-    #[error("not a valid song")]
+    #[error("invalid music: not a valid song")]
     NotASong,
     #[error("invalid author: {0}")]
     InvalidAuthor(StringError),
-    #[error("invalid brand")]
-    InvalidBrand,
-    #[error("invalid burdens")]
-    InvalidBurdens,
+    #[error("invalid brand: {0}")]
+    InvalidBrand(NumberError),
+    #[error("invalid burdens: {0}")]
+    InvalidBurdens(NumberError),
     #[error("invalid tiles")]
     InvalidTiles,
     #[error("invalid objects")]
@@ -43,6 +33,30 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("bincode (de)serialization error: {0}")]
     Bincode(#[from] bincode::Error),
+}
+
+#[derive(thiserror::Error, Debug)]
+// i don't want an enum with the name "String" lol
+#[allow(clippy::module_name_repetitions)]
+pub enum StringError {
+    #[error("invalid base64")]
+    Base64(#[from] base64::DecodeError),
+    #[error("utf8 error: {0}")]
+    FromUtf8(#[from] std::string::FromUtf8Error),
+    #[error("input was too long: {found} > {max}")]
+    TooLong { max: u64, found: u64 },
+    #[error("input was too short: 0 < 1")]
+    TooShort,
+}
+
+#[derive(thiserror::Error, Debug)]
+// i don't want an enum with the name "Number" lol
+#[allow(clippy::module_name_repetitions)]
+pub enum NumberError {
+    #[error("not a number: {0}")]
+    NotANumber(#[from] std::num::ParseIntError),
+    #[error("too big of a number: {found} > {max}")]
+    TooBig { max: u64, found: u64 },
 }
 
 impl axum::response::IntoResponse for Error {

@@ -6,8 +6,9 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use ulid::Ulid;
 
-const BLACK_HOLE_FORMAT: &str =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=!";
+const MAX_NAME_LEN: usize = 30;
+const MAX_DESCRIPTION_LEN: usize = 256;
+const MAX_AUTHOR_LEN: usize = 30;
 const BRAND_36_BITS: u64 = 68_719_476_735;
 const BURDENS_4_BITS: u8 = 31;
 const VALID_MUSIC: [&str; 11] = [
@@ -24,6 +25,8 @@ const VALID_MUSIC: [&str; 11] = [
     "msc_beesong",
     "msc_monstrail",
 ];
+const BLACK_HOLE_FORMAT: &str =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=!";
 
 // TODO: not pub
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
@@ -125,6 +128,8 @@ impl Level {
         ))
     }
 
+    // i don't want to shorten it
+    #[allow(clippy::too_many_lines)]
     pub fn into_parsed(self) -> Result<Parsed> {
         let (
             version,
@@ -144,17 +149,32 @@ impl Level {
             .splitn(11, '|')
             .collect_tuple()
             .ok_or(Error::InvalidStructure)?;
-        let version = version.parse::<u8>().map_err(|_| Error::InvalidVersion)?;
+
+        let version = version
+            .parse::<u8>()
+            .map_err(|why| Error::InvalidVersion(NumberError::NotANumber(why)))?;
         if version != 1 {
-            return Err(Error::InvalidVersion);
+            return Err(Error::InvalidVersion(NumberError::TooBig {
+                max: 1,
+                found: u64::from(version),
+            }));
         }
-        // TODO: decide character limits
+
         let name = String::from_utf8(
             BASE64_STANDARD
                 .decode(name)
                 .map_err(|why| Error::InvalidName(StringError::Base64(why)))?,
         )
         .map_err(|why| Error::InvalidName(StringError::FromUtf8(why)))?;
+        if name.is_empty() {
+            return Err(Error::InvalidName(StringError::TooShort));
+        }
+        if name.len() > MAX_NAME_LEN {
+            return Err(Error::InvalidName(StringError::TooLong {
+                max: MAX_NAME_LEN as u64,
+                found: name.len() as u64,
+            }));
+        }
 
         let description = String::from_utf8(
             BASE64_STANDARD
@@ -162,6 +182,12 @@ impl Level {
                 .map_err(|why| Error::InvalidDescription(StringError::Base64(why)))?,
         )
         .map_err(|why| Error::InvalidDescription(StringError::FromUtf8(why)))?;
+        if description.len() > MAX_DESCRIPTION_LEN {
+            return Err(Error::InvalidDescription(StringError::TooLong {
+                max: MAX_DESCRIPTION_LEN as u64,
+                found: description.len() as u64,
+            }));
+        }
 
         let music = String::from_utf8(
             BASE64_STANDARD
@@ -169,7 +195,6 @@ impl Level {
                 .map_err(|why| Error::InvalidMusic(StringError::Base64(why)))?,
         )
         .map_err(|why| Error::InvalidMusic(StringError::FromUtf8(why)))?;
-
         if !VALID_MUSIC.contains(&music.as_str()) {
             return Err(Error::NotASong);
         }
@@ -180,19 +205,38 @@ impl Level {
                 .map_err(|why| Error::InvalidAuthor(StringError::Base64(why)))?,
         )
         .map_err(|why| Error::InvalidAuthor(StringError::FromUtf8(why)))?;
-
-        let brand = brand.parse::<u64>().map_err(|_| Error::InvalidBrand)?;
-        if brand > BRAND_36_BITS {
-            return Err(Error::InvalidBrand);
+        if author.is_empty() {
+            return Err(Error::InvalidName(StringError::TooShort));
+        }
+        if author.len() > MAX_AUTHOR_LEN {
+            return Err(Error::InvalidName(StringError::TooLong {
+                max: MAX_AUTHOR_LEN as u64,
+                found: author.len() as u64,
+            }));
         }
 
-        let burdens = burdens.parse::<u8>().map_err(|_| Error::InvalidBurdens)?;
+        let brand = brand
+            .parse::<u64>()
+            .map_err(|why| Error::InvalidBrand(NumberError::NotANumber(why)))?;
+        if brand > BRAND_36_BITS {
+            return Err(Error::InvalidBrand(NumberError::TooBig {
+                max: BRAND_36_BITS,
+                found: brand,
+            }));
+        }
+
+        let burdens = burdens
+            .parse::<u8>()
+            .map_err(|why| Error::InvalidBurdens(NumberError::NotANumber(why)))?;
         if burdens > BURDENS_4_BITS {
-            return Err(Error::InvalidBurdens);
+            return Err(Error::InvalidBurdens(NumberError::TooBig {
+                max: u64::from(BURDENS_4_BITS),
+                found: u64::from(burdens),
+            }));
         }
 
         // TODO: is there some way to actually validate level data?
-        // if any chars are invalid
+        // if any character is not in the list of allowed characters
         if tiles.chars().any(|char| !BLACK_HOLE_FORMAT.contains(char)) {
             return Err(Error::InvalidTiles);
         }

@@ -37,7 +37,6 @@ pub async fn post(
     let id = Ulid::new();
 
     db.insert_orphan(id, level);
-    db.save();
     Ok((StatusCode::CREATED, id.to_string()))
 }
 
@@ -51,7 +50,6 @@ pub async fn orphanage(
 
     let ssn = key.parse()?;
     db.adopt_orphan(&ssn)?;
-    db.save();
 
     Ok(StatusCode::OK)
 }
