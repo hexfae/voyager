@@ -32,6 +32,7 @@ enum_glob_use = "deny"
 pedantic = { level = "deny", priority = -1 }
 nursery = { level = "deny", priority = -1 }
 unwrap_used = "deny"
+missing_docs_in_private_items = "warn"
 
 [profile.release]
 opt-level = "z"

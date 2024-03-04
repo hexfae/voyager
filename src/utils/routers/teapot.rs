@@ -1,3 +1,4 @@
+//! Router for any unhandled HTTP methods. Easter egg.
 use axum::{extract::ConnectInfo, http::StatusCode};
 use std::net::SocketAddr;
 use tracing::info;

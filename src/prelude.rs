@@ -1,6 +1,9 @@
+//! Common items used throughout Voyager.
 pub use crate::error::Error;
 pub use crate::error::NumberError;
 pub use crate::error::StringError;
 pub use crate::utils::level::Level;
 pub use crate::utils::server::SharedAppState;
-pub type Result<T> = core::result::Result<T, Error>;
+/// The common result type used throughout
+/// Voyager, using Voyager's [`Error`].
+pub type Result<T> = std::result::Result<T, Error>;

@@ -1,3 +1,5 @@
+//! Routers for the POST HTTP method.
+
 use crate::prelude::*;
 use axum::{
     extract::{ConnectInfo, State},
@@ -7,15 +9,10 @@ use std::net::SocketAddr;
 use tracing::info;
 use ulid::Ulid;
 
-/// Uploads a level to the database (if valid) and returns the ULID key to it.
+/// Stages a level for uploading (if valid) and returns
+/// its key. An anti-orphan check [`orphanage`] is necessary.
 ///
-/// Takes in a level in Void Stranger Level (VSL) format. A
-/// [ULID](https://github.com/ulid/spec) key is generated and returned,
-/// used for future editing/deleting.
-///
-/// The format is as follows:
-///
-/// `version|name|description|music|author|brand|burdens|tiles|objects`
+/// See [`Data`] for details on level format.
 ///
 /// Returns 201 CREATED and a ULID key if successful. Returns 400 BAD REQUEST if
 /// the level was invalid.
@@ -40,6 +37,21 @@ pub async fn post(
     Ok((StatusCode::CREATED, id.to_string()))
 }
 
+/// Moves a level from the orphan list to the level list.
+///
+/// To make sure that the client received and saved the key,
+/// Voyager will wait to insert levels into the database until
+/// it receives the level's key back, finally inserting the
+/// level into the level list if successful. This is to combat
+/// the possible immediate creation of orphan levels (ones
+/// where the key is lost).
+///
+/// Yes, this whole thing is probably unnecessary, but
+/// it was requested by the Endless Void developer.
+///
+/// Returns 200 OK if successful. Returns 400 BAD REQUEST on
+/// invalid key. Returns 404 NOT FOUND on valid key, but
+/// no matching level.
 pub async fn orphanage(
     State(db): State<SharedAppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -51,5 +63,6 @@ pub async fn orphanage(
     let ssn = key.parse()?;
     db.adopt_orphan(&ssn)?;
 
+    info!("ADOPTION successful!");
     Ok(StatusCode::OK)
 }

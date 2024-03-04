@@ -1,3 +1,5 @@
+//! Router for the DELETE HTTP method.
+
 use crate::prelude::*;
 use axum::{
     extract::{ConnectInfo, State},
