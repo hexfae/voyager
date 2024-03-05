@@ -251,18 +251,8 @@ impl Level {
         ))
     }
 
-    // i don't want to shorten it
-    // TODO: i now want to shorten it
-    // do like
-    // impl Name {fn parse() -> Result<Name>}
-    // or something
     /// Parses and validates the level, returning
     /// an appropriate [`Error`] if unsuccessful.
-    ///
-    /// This is a very large function, and
-    /// is overdue for a refactor. Therefore,
-    /// documentation is a TODO. Sorry.
-    #[allow(clippy::too_many_lines)]
     pub fn into_parsed(self) -> Result<Parsed> {
         let (
             version,
@@ -283,116 +273,30 @@ impl Level {
             .collect_tuple()
             .ok_or(Error::InvalidStructure)?;
 
-        let version = version
-            .parse::<u8>()
-            .map_err(|why| Error::InvalidVersion(NumberError::NotANumber(why)))?;
-        if version != 1 {
-            return Err(Error::InvalidVersion(NumberError::TooBig {
-                max: 1,
-                found: u64::from(version),
-            }));
-        }
-
-        let name = String::from_utf8(
-            BASE64_STANDARD
-                .decode(name)
-                .map_err(|why| Error::InvalidName(StringError::Base64(why)))?,
-        )
-        .map_err(|why| Error::InvalidName(StringError::FromUtf8(why)))?;
-        if name.is_empty() {
-            return Err(Error::InvalidName(StringError::TooShort));
-        }
-        if name.len() > MAX_NAME_LEN {
-            return Err(Error::InvalidName(StringError::TooLong {
-                max: MAX_NAME_LEN as u64,
-                found: name.len() as u64,
-            }));
-        }
-
-        let description = String::from_utf8(
-            BASE64_STANDARD
-                .decode(description)
-                .map_err(|why| Error::InvalidDescription(StringError::Base64(why)))?,
-        )
-        .map_err(|why| Error::InvalidDescription(StringError::FromUtf8(why)))?;
-        if description.len() > MAX_DESCRIPTION_LEN {
-            return Err(Error::InvalidDescription(StringError::TooLong {
-                max: MAX_DESCRIPTION_LEN as u64,
-                found: description.len() as u64,
-            }));
-        }
-
-        let music = String::from_utf8(
-            BASE64_STANDARD
-                .decode(music)
-                .map_err(|why| Error::InvalidMusic(StringError::Base64(why)))?,
-        )
-        .map_err(|why| Error::InvalidMusic(StringError::FromUtf8(why)))?;
-        if !VALID_MUSIC.contains(&music.as_str()) {
-            return Err(Error::NotASong);
-        }
-
-        let author = String::from_utf8(
-            BASE64_STANDARD
-                .decode(author)
-                .map_err(|why| Error::InvalidAuthor(StringError::Base64(why)))?,
-        )
-        .map_err(|why| Error::InvalidAuthor(StringError::FromUtf8(why)))?;
-        if author.is_empty() {
-            return Err(Error::InvalidName(StringError::TooShort));
-        }
-        if author.len() > MAX_AUTHOR_LEN {
-            return Err(Error::InvalidName(StringError::TooLong {
-                max: MAX_AUTHOR_LEN as u64,
-                found: author.len() as u64,
-            }));
-        }
-
-        let brand = brand
-            .parse::<u64>()
-            .map_err(|why| Error::InvalidBrand(NumberError::NotANumber(why)))?;
-        if brand > BRAND_36_BITS {
-            return Err(Error::InvalidBrand(NumberError::TooBig {
-                max: BRAND_36_BITS,
-                found: brand,
-            }));
-        }
-
-        let burdens = burdens
-            .parse::<u8>()
-            .map_err(|why| Error::InvalidBurdens(NumberError::NotANumber(why)))?;
-        if burdens > BURDENS_4_BITS {
-            return Err(Error::InvalidBurdens(NumberError::TooBig {
-                max: u64::from(BURDENS_4_BITS),
-                found: u64::from(burdens),
-            }));
-        }
-
-        // TODO: is there some way to actually validate level data?
-        // if any character is not in the list of allowed characters
-        if tiles.chars().any(|char| !BLACK_HOLE_FORMAT.contains(char)) {
-            return Err(Error::InvalidTiles);
-        }
-
-        if objects
-            .chars()
-            .any(|char| !BLACK_HOLE_FORMAT.contains(char))
-        {
-            return Err(Error::InvalidObjects);
-        }
+        let version = Version::try_from(version)?;
+        let name = Name::try_from(name)?;
+        let description = Description::try_from(description)?;
+        let music = Music::try_from(music)?;
+        let author = Author::try_from(author)?;
+        let brand = Brand::try_from(brand)?;
+        let uploaded = Uploaded(uploaded.to_string());
+        let edited = Edited(edited.to_string());
+        let burdens = Burdens::try_from(burdens)?;
+        let tiles = Tiles::try_from(tiles)?;
+        let objects = Objects::try_from(objects)?;
 
         Ok(Parsed {
-            version: Version(version),
-            name: Name(name),
-            description: Description(description),
-            music: Music(music),
-            author: Author(author),
-            brand: Brand(brand),
-            burdens: Burdens(burdens),
-            tiles: Tiles(tiles.to_string()),
-            objects: Objects(objects.to_string()),
-            uploaded: Uploaded(uploaded.to_string()),
-            edited: Edited(edited.to_string()),
+            version,
+            name,
+            description,
+            music,
+            author,
+            brand,
+            uploaded,
+            edited,
+            burdens,
+            tiles,
+            objects,
         })
     }
 }
@@ -441,6 +345,164 @@ impl Parsed {
         let objects = self.objects.0;
         let data = format!("{version}|{name}|{description}|{music}|{author}|{brand}|{uploaded}|{edited}|{burdens}|{tiles}|{objects}");
         Level { data: Data(data) }
+    }
+}
+
+impl TryFrom<&str> for Version {
+    type Error = Error;
+
+    fn try_from(input: &str) -> std::prelude::v1::Result<Self, Self::Error> {
+        let version = input
+            .parse::<u8>()
+            .map_err(|why| Error::InvalidVersion(NumberError::NotANumber(why)))?;
+        if version != 1 {
+            return Err(Error::InvalidVersion(NumberError::TooBig {
+                max: 1,
+                found: u64::from(version),
+            }));
+        }
+        Ok(Self(version))
+    }
+}
+
+impl TryFrom<&str> for Name {
+    type Error = Error;
+
+    fn try_from(input: &str) -> std::prelude::v1::Result<Self, Self::Error> {
+        let name = String::from_utf8(
+            BASE64_STANDARD
+                .decode(input)
+                .map_err(|why| Error::InvalidName(StringError::Base64(why)))?,
+        )
+        .map_err(|why| Error::InvalidName(StringError::FromUtf8(why)))?;
+        if name.is_empty() {
+            return Err(Error::InvalidName(StringError::TooShort));
+        }
+        if name.len() > MAX_NAME_LEN {
+            return Err(Error::InvalidName(StringError::TooLong {
+                max: MAX_NAME_LEN as u64,
+                found: name.len() as u64,
+            }));
+        }
+        Ok(Self(name))
+    }
+}
+
+impl TryFrom<&str> for Description {
+    type Error = Error;
+
+    fn try_from(input: &str) -> std::prelude::v1::Result<Self, Self::Error> {
+        let description = String::from_utf8(
+            BASE64_STANDARD
+                .decode(input)
+                .map_err(|why| Error::InvalidDescription(StringError::Base64(why)))?,
+        )
+        .map_err(|why| Error::InvalidDescription(StringError::FromUtf8(why)))?;
+        if description.len() > MAX_DESCRIPTION_LEN {
+            return Err(Error::InvalidDescription(StringError::TooLong {
+                max: MAX_DESCRIPTION_LEN as u64,
+                found: description.len() as u64,
+            }));
+        }
+        Ok(Self(description))
+    }
+}
+
+impl TryFrom<&str> for Music {
+    type Error = Error;
+
+    fn try_from(input: &str) -> std::prelude::v1::Result<Self, Self::Error> {
+        let music = String::from_utf8(
+            BASE64_STANDARD
+                .decode(input)
+                .map_err(|why| Error::InvalidMusic(StringError::Base64(why)))?,
+        )
+        .map_err(|why| Error::InvalidMusic(StringError::FromUtf8(why)))?;
+        if !VALID_MUSIC.contains(&music.as_str()) {
+            return Err(Error::NotASong);
+        }
+        Ok(Self(music))
+    }
+}
+
+impl TryFrom<&str> for Author {
+    type Error = Error;
+
+    fn try_from(input: &str) -> std::prelude::v1::Result<Self, Self::Error> {
+        let author = String::from_utf8(
+            BASE64_STANDARD
+                .decode(input)
+                .map_err(|why| Error::InvalidAuthor(StringError::Base64(why)))?,
+        )
+        .map_err(|why| Error::InvalidAuthor(StringError::FromUtf8(why)))?;
+        if author.is_empty() {
+            return Err(Error::InvalidName(StringError::TooShort));
+        }
+        if author.len() > MAX_AUTHOR_LEN {
+            return Err(Error::InvalidName(StringError::TooLong {
+                max: MAX_AUTHOR_LEN as u64,
+                found: author.len() as u64,
+            }));
+        }
+        Ok(Self(author))
+    }
+}
+
+impl TryFrom<&str> for Brand {
+    type Error = Error;
+
+    fn try_from(input: &str) -> std::prelude::v1::Result<Self, Self::Error> {
+        let brand = input
+            .parse::<u64>()
+            .map_err(|why| Error::InvalidBrand(NumberError::NotANumber(why)))?;
+        if brand > BRAND_36_BITS {
+            return Err(Error::InvalidBrand(NumberError::TooBig {
+                max: BRAND_36_BITS,
+                found: brand,
+            }));
+        }
+        Ok(Self(brand))
+    }
+}
+
+impl TryFrom<&str> for Burdens {
+    type Error = Error;
+
+    fn try_from(input: &str) -> std::prelude::v1::Result<Self, Self::Error> {
+        let burdens = input
+            .parse::<u8>()
+            .map_err(|why| Error::InvalidBurdens(NumberError::NotANumber(why)))?;
+        if burdens > BURDENS_4_BITS {
+            return Err(Error::InvalidBurdens(NumberError::TooBig {
+                max: u64::from(BURDENS_4_BITS),
+                found: u64::from(burdens),
+            }));
+        }
+        Ok(Self(burdens))
+    }
+}
+
+impl TryFrom<&str> for Tiles {
+    type Error = Error;
+
+    fn try_from(input: &str) -> std::prelude::v1::Result<Self, Self::Error> {
+        // TODO: is there some way to actually validate level data?
+        // if any character is not in the list of allowed characters
+        if input.chars().any(|char| !BLACK_HOLE_FORMAT.contains(char)) {
+            return Err(Error::InvalidTiles);
+        }
+        Ok(Self(input.to_string()))
+    }
+}
+
+impl TryFrom<&str> for Objects {
+    type Error = Error;
+
+    fn try_from(input: &str) -> std::prelude::v1::Result<Self, Self::Error> {
+        if input.chars().any(|char| !BLACK_HOLE_FORMAT.contains(char)) {
+            return Err(Error::InvalidObjects);
+        }
+        Ok(Self(input.to_string()))
     }
 }
 
