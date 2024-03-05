@@ -32,8 +32,7 @@ pub async fn put(
     let (level, key) = Level::new_from_put(&input)?;
     let mut parsed = level.into_parsed()?;
 
-    // must clone because dashmap will deadlock otherwise
-    let old_level = db.get(&key).ok_or(Error::LevelNotFound)?.clone();
+    let old_level = db.get(&key)?;
     parsed.set_dates_to_now();
     parsed.set_uploaded_from(old_level)?;
     let level = parsed.into_level();

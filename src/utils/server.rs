@@ -1,6 +1,6 @@
 //! Contains [`AppState`], related methods, and
 //! various Axum server-related functions.
-use super::routers;
+use super::{level::Validated, routers};
 use crate::prelude::*;
 use axum::{
     http::StatusCode,
@@ -32,9 +32,9 @@ pub type SharedAppState = Arc<AppState>;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AppState {
     /// Every key and its matching uploaded, validated level.
-    levels: DashMap<Ulid, Level>,
+    levels: DashMap<Ulid, Level<Validated>>,
     /// Every key and its matching validated orphan (see [`orphanage`]).
-    orphans: DashMap<Ulid, Level>,
+    orphans: DashMap<Ulid, Level<Validated>>,
 }
 
 impl AppState {
@@ -100,13 +100,13 @@ impl AppState {
     }
 
     /// Inserts a level and its key and saves to a file.
-    pub fn insert(&self, key: Ulid, level: Level) {
+    pub fn insert(&self, key: Ulid, level: Level<Validated>) {
         self.levels.insert(key, level);
         self.save();
     }
 
     /// Inserts an orphan and its key and saves to a file.
-    pub fn insert_orphan(&self, key: Ulid, level: Level) {
+    pub fn insert_orphan(&self, key: Ulid, level: Level<Validated>) {
         self.orphans.insert(key, level);
         self.save();
     }
@@ -125,10 +125,11 @@ impl AppState {
         Ok(())
     }
 
-    /// Get a reference to a level in the database, if it exists.
-    #[must_use]
-    pub fn get(&self, input: &Ulid) -> Option<dashmap::mapref::one::Ref<'_, ulid::Ulid, Level>> {
-        self.levels.get(input)
+    /// Get a clone of a level from the database, if it exists.
+    pub fn get(&self, input: &Ulid) -> Result<Level<Validated>> {
+        self.levels
+            .get(input)
+            .map_or_else(|| Err(Error::LevelNotFound), |level| Ok(level.clone()))
     }
 
     /// Deletes a level from the database, if it exists.

@@ -1,6 +1,8 @@
 //! Contains the `Level` and `ParsedLevel` structs, related
 //! constants, and related wrapper types for `ParsedLevel`.
 
+use std::marker::PhantomData;
+
 use crate::prelude::*;
 use base64::{prelude::BASE64_STANDARD, Engine};
 use derive_more::Display;
@@ -80,15 +82,41 @@ pub const BLACK_HOLE_FORMAT: &str =
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Data(String);
 
+/// The default state of a level from POST and PUT requests. In
+/// order to be inserted into the database, the level must first
+/// be parsed (and therefore validated) via [`Level::into_parsed()`].
+/// before going through [`Parsed::into_level()`].
+#[derive(Debug, Clone)]
+pub struct Unvalidated;
+
+/// The required state for a level being inserted into the database. A
+/// level must go through [`Level::into_parsed()`] and then through
+/// [`Parsed::into_level()`].
+///
+/// A validated level has a few guarantees: It has a valid version format.
+/// Name, description, and author are all valid strings and lengths.
+/// Music is one of eleven [`VALID_MUSIC`]. Brand and burdens are valid
+/// 36-bit and 4-bit numbers, respectively. It has an upload and last edit
+/// date in `yyyymmdd` format.
+///
+/// The only thing that is not guaranteed is the validity of the tiles and
+/// objects. There is only a simple check that no character is invalid
+/// (Endless Void would never generate it) according to [`BLACK_HOLE_FORMAT`].
+#[derive(Debug, Clone)]
+pub struct Validated;
+
 /// A (possibly invalid) Void Stranger level.
 ///
 /// See [`Data`] for details.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
-pub struct Level {
+#[display(fmt = "{data}")]
+pub struct Level<State = Unvalidated> {
     /// A level's (possibly invalid) data.
     ///
     /// See [`Data`] for details.
     pub data: Data,
+    /// The level's current validity state. See [`Validated`] and [`Unvalidated`].
+    state: PhantomData<State>,
 }
 
 /// The level format version.
@@ -185,15 +213,7 @@ struct Key(Ulid);
 
 /// A parsed, validated Void Stranger level.
 ///
-/// A parsed level has a few guarantees: It has a valid version format.
-/// Name, description, and author are all valid strings and lengths.
-/// Music is one of eleven [`VALID_MUSIC`]. Brand and burdens are valid
-/// 36-bit and 4-bit numbers, respectively. It has an upload and last edit
-/// date in `yyyymmdd` format.
-///
-/// The only thing that is not guaranteed is the validity of the tiles and
-/// objects. There is only a simple check that no character is invalid
-/// (Endless Void would never generate it) according to [`BLACK_HOLE_FORMAT`].
+/// See [`Validated`] for details on level validity.
 pub struct Parsed {
     /// See [`Version`].
     version: Version,
@@ -219,7 +239,7 @@ pub struct Parsed {
     objects: Objects,
 }
 
-impl Level {
+impl Level<Unvalidated> {
     /// Creates a new (possibly invalid) Void Stranger level, for POST.
     ///
     /// See [`Data`] for details on valid POST input.
@@ -228,7 +248,10 @@ impl Level {
     /// the level should be parsed (validated) using
     /// [`Self::into_parsed`] before insertion into the database.
     pub const fn new(input: String) -> Self {
-        Self { data: Data(input) }
+        Self {
+            data: Data(input),
+            state: PhantomData::<Unvalidated>,
+        }
     }
 
     /// Creates a new (possibly invalid) Void Stranger level, for PUT.
@@ -246,11 +269,14 @@ impl Level {
         Ok((
             Self {
                 data: Data(input.into()),
+                state: PhantomData::<Unvalidated>,
             },
             key.parse()?,
         ))
     }
+}
 
+impl<State> Level<State> {
     /// Parses and validates the level, returning
     /// an appropriate [`Error`] if unsuccessful.
     pub fn into_parsed(self) -> Result<Parsed> {
@@ -321,7 +347,7 @@ impl Parsed {
     /// This is used for PUT requests, where the
     /// old level is gotten from the database to
     /// reference the level's original upload date.
-    pub fn set_uploaded_from(&mut self, input: Level) -> Result<()> {
+    pub fn set_uploaded_from(&mut self, input: Level<Validated>) -> Result<()> {
         self.uploaded = input.into_parsed()?.uploaded;
         Ok(())
     }
@@ -331,7 +357,7 @@ impl Parsed {
     /// For a POST and PUT requests, this is done immediately
     /// after parsing (validating) the level to insert into
     /// the database as validated.
-    pub fn into_level(self) -> Level {
+    pub fn into_level(self) -> Level<Validated> {
         let version = self.version.0;
         let name = BASE64_STANDARD.encode(self.name.0);
         let description = BASE64_STANDARD.encode(self.description.0);
@@ -344,7 +370,10 @@ impl Parsed {
         let tiles = self.tiles.0;
         let objects = self.objects.0;
         let data = format!("{version}|{name}|{description}|{music}|{author}|{brand}|{uploaded}|{edited}|{burdens}|{tiles}|{objects}");
-        Level { data: Data(data) }
+        Level {
+            data: Data(data),
+            state: PhantomData::<Validated>,
+        }
     }
 }
 

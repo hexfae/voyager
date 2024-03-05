@@ -24,7 +24,6 @@ pub async fn post(
     let addr = addr.ip();
     info!("POST sent by {addr}: {level}");
 
-    // TODO: remove redundancy
     let level = Level::new(level);
     let mut parsed = level.into_parsed()?;
     parsed.set_dates_to_now();
