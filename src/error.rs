@@ -87,6 +87,8 @@ pub enum Error {
     /// file (`./voyager.db`) containing the stored levels.
     #[error("bincode (de)serialization error: {0}")]
     Bincode(#[from] bincode::Error),
+    #[error("inquire error: {0}")]
+    Inquire(#[from] inquire::InquireError),
 }
 
 /// All number-related Voyager errors.

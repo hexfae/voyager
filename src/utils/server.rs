@@ -1,13 +1,21 @@
 //! Contains [`AppState`], related methods, and
 //! various Axum server-related functions.
-use super::{level::Validated, routers};
 use crate::prelude::*;
+use crate::utils::{level::Validated, routers, webui};
 use axum::{
+    async_trait,
     http::StatusCode,
     routing::{any, delete, get, post, put},
     Router,
 };
+use axum_login::login_required;
+use axum_login::{
+    tower_sessions::{MemoryStore, SessionManagerLayer},
+    AuthManagerLayerBuilder, AuthUser, AuthnBackend, UserId,
+};
 use dashmap::DashMap;
+use inquire::{min_length, Password, Text};
+use password_auth::generate_hash;
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{read, write},
@@ -163,14 +171,25 @@ impl AppState {
 /// Returns an error if the app could not be served.
 pub async fn start_voyager() -> Result<()> {
     info!("Voyager is now listening on port 3000.");
-    let router = create_router();
+    let router = create_router()?;
     serve_app(router).await
 }
 
 /// Creates a new [`Router`] for Voyager.
-fn create_router() -> Router {
+fn create_router() -> Result<Router> {
     let levels = AppState::load();
-    Router::new()
+
+    let session_store = MemoryStore::default();
+    let session_layer = SessionManagerLayer::new(session_store).with_secure(false);
+
+    let backend = Backend::new()?;
+    let auth_layer = AuthManagerLayerBuilder::new(backend, session_layer).build();
+
+    Ok(Router::new()
+        .route("/voyager/webui", get(webui::index::index))
+        .route_layer(login_required!(Backend, login_url = "/voyager/webui/login"))
+        .route("/voyager/webui/login", get(webui::login::get))
+        .route("/voyager/webui/login", post(webui::login::post))
         .route("/voyager", get(routers::get::get))
         .route("/voyager/:keys", get(routers::get::levels_exist))
         .route("/voyager", post(routers::post::post))
@@ -180,6 +199,7 @@ fn create_router() -> Router {
         .route("/voyager", any(routers::teapot::teapot))
         .with_state(levels)
         .layer(TimeoutLayer::new(Duration::from_secs(10)))
+        .layer(auth_layer))
 }
 
 /// Serves the Voyager app on port 3000.
@@ -216,5 +236,83 @@ async fn shutdown_signal() {
     tokio::select! {
         () = ctrl_c => {},
         () = terminate => {},
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct User {
+    id: i64,
+    pub username: String,
+    password_hash: String,
+}
+
+impl AuthUser for User {
+    type Id = i64;
+
+    fn id(&self) -> Self::Id {
+        self.id
+    }
+
+    fn session_auth_hash(&self) -> &[u8] {
+        self.password_hash.as_bytes()
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct Backend {
+    users: std::collections::HashMap<i64, User>,
+}
+
+impl Backend {
+    fn new() -> Result<Self> {
+        println!("please create a user for the webui!");
+        let username = Text::new("username:")
+            .with_validator(min_length!(2))
+            .prompt()?;
+        let password = Password::new("password:")
+            .with_validator(min_length!(8))
+            .prompt()?;
+        Ok(Self {
+            users: std::collections::HashMap::from([(
+                1,
+                User {
+                    id: 1,
+                    username,
+                    password_hash: generate_hash(password),
+                },
+            )]),
+        })
+    }
+}
+
+#[derive(Clone, Deserialize)]
+pub struct Credentials {
+    pub username: String,
+    pub password: String,
+    pub next: Option<String>,
+}
+
+#[async_trait]
+impl AuthnBackend for Backend {
+    type User = User;
+    type Credentials = Credentials;
+    type Error = std::convert::Infallible;
+
+    async fn authenticate(
+        &self,
+        Credentials { username, .. }: Self::Credentials,
+    ) -> std::result::Result<Option<Self::User>, Self::Error> {
+        Ok(self
+            .users
+            .values()
+            .find(|user| user.username == username)
+            .cloned())
+    }
+
+    async fn get_user(
+        &self,
+        user_id: &UserId<Self>,
+    ) -> std::result::Result<Option<Self::User>, Self::Error> {
+        Ok(self.users.get(user_id).cloned())
     }
 }
