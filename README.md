@@ -1,27 +1,24 @@
 # Voyager
 
-Voyager is the future server back-end for [Endless Void](https://github.com/Skirlez/void-stranger-endless-void), a level editor for [Void Stranger](https://store.steampowered.com/app/2121980/Void_Stranger/), a "2D sokoban-style puzzle game where every step counts."
+Voyager is the server back-end for [Endless Void](https://github.com/Skirlez/void-stranger-endless-void), a level editor for [Void Stranger](https://store.steampowered.com/app/2121980/Void_Stranger/), a "2D sokoban-style puzzle game where every step counts."
 
-## The philosophy going forward
+## Building
 
-In terms of priorities for this project, generally, `idiomatic > small > fast`. Previously, Voyager's priorities have been something like `fast > small > idiomatic`, for some reason. Despite having a cool name, Voyager is a very simple project. At its core, it's a glorified key-value database (and its internal data structure currently reflects that), with its most complex feature being (ideally) a very simple level parsing/validation (essentially, "does this kind of look somewhat like how a level should?"). 
+Same as (mostly) any other Rust project, `cargo build [--release]`.
 
-### Idiomatic
+## Running
 
-Idiomatic code is good not only for readability, but also for practice and for showing off. Since there's no real need to optimize for size nor for performance, why not write the most beautiful code possible?
+Voyager attempts to bind to port 3000. Voyager also looks for or creates a `voyager.db` file in the current directory.
 
-### Small
+## Usage
 
-Mostly referring to memory usage, it would generally be a good idea to decrease it, especially since the free VPS from Oracle where Voyager will be running only has 1GB of RAM. Thankfully, the average Void Stranger level is incredibly tiny (<1KB), and simply storing them and their key in a HashMap (or, currently, a DashMap) is incredibly difficult to mess up.
+Voyager is a server/database for [Endless Void](https://github.com/Skirlez/void-stranger-endless-void). As such, little else is needed than to simply run it, and for users to send requests to it. Users can change which server to connect to in-game (although the official one is obviously recommended).
 
-### Fast
-
-Speed is a feature. Despite this, an end-user is unlikely to notice their level uploading in 400µs instead of 500µs. Rust and Axum are plenty fast enough, and Voyager is unlikely to have more than 2 concurrent users. Therefore, optimizing for speed, and the concept of speed in general, should be an afterthought, as striving for speed generally leads to premature optimization (speaking from experience).
+A Web UI is available at `/voyager/webui`. The Web UI may be used for administrative tasks, such as deleting naughty levels. Actual level uploading, editing, and browsing is done by clients through [Endless Void](https://github.com/Skirlez/void-stranger-endless-void).
 
 ## To-do list
 
-- [ ] PUT router.
-- [ ] Improved logging.
-- [ ] Comprehensive testing.
-- [ ] Extensive documenting.
-- [ ] Appropriate simplifying.
+- [ ] Level packs.
+- [ ] Web UI (for administration).
+- [ ] Comprehensive logging.
+- [ ] Testing?
