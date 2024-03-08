@@ -78,7 +78,6 @@ pub const BLACK_HOLE_FORMAT: &str =
 /// See [`Version`], [`Name`], [`Description`], [`Music`],
 /// [`Author`], [`Brand`], [`Uploaded`], [`Edited`], [`Burdens`],
 /// [`Tiles`], [`Objects`], and [`Key`] for further details.
-// TODO: not pub
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Data(String);
 
@@ -123,35 +122,35 @@ pub struct Level<State = Unvalidated> {
 ///
 /// Currently, this is only 1.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
-struct Version(u8);
+pub struct Version(u8);
 
 /// The level's name.
 ///
 /// Encoded as standard Base64, with a
 /// minimum length of 1 and a max length of [`MAX_NAME_LEN`].
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
-struct Name(String);
+pub struct Name(String);
 
 /// The level's description.
 ///
 /// Encoded as standard Base64,
 /// with no minimum, but a max length of [`MAX_NAME_LEN`].
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
-struct Description(String);
+pub struct Description(String);
 
 /// The level's choice of music.
 ///
 /// Encoded as standard
 /// Base64, it must be one of [`VALID_MUSIC`].
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
-struct Music(String);
+pub struct Music(String);
 
 /// The level's author.
 ///
 /// Encoded as standard Base64, with a
 /// minimum length of 1 and a max length of [`MAX_AUTHOR_LEN`].
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
-struct Author(String);
+pub struct Author(String);
 
 /// The level's author brand.
 ///
@@ -162,7 +161,7 @@ struct Author(String);
 ///
 /// See `BRAND_36_BITS` for the biggest brand possible.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
-struct Brand(u64);
+pub struct Brand(u64);
 
 /// The level's original upload date.
 ///
@@ -176,7 +175,7 @@ pub struct Uploaded(String);
 /// Encoded as `yyyymmdd`, e.g. 20240304. The timezone
 /// is UTC.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
-struct Edited(String);
+pub struct Edited(String);
 
 /// The level's burdens.
 ///
@@ -187,7 +186,7 @@ struct Edited(String);
 ///
 /// See `BURDENS_4_BITS` for the biggest value possible.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
-struct Burdens(u8);
+pub struct Burdens(u8);
 
 /// The level's tiles.
 ///
@@ -195,7 +194,7 @@ struct Burdens(u8);
 /// [`BLACK_HOLE_FORMAT`] for all allowed characters.
 /// Check Endless Void's documentation for more details.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
-struct Tiles(String);
+pub struct Tiles(String);
 
 /// The level's objects.
 ///
@@ -203,40 +202,48 @@ struct Tiles(String);
 /// [`BLACK_HOLE_FORMAT`] for all allowed characters.
 /// Check Endless Void's documentation for more details.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
-struct Objects(String);
+pub struct Objects(String);
 
 /// The level's private key.
 ///
 /// Encoded as a [ULID](https://github.com/ulid/spec) key.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
-struct Key(Ulid);
+pub struct Key(pub Ulid);
 
 /// A parsed, validated Void Stranger level.
 ///
 /// See [`Validated`] for details on level validity.
 pub struct Parsed {
     /// See [`Version`].
-    version: Version,
+    pub version: Version,
     /// See [`Name`].
-    name: Name,
+    pub name: Name,
     /// See [`Description`].
-    description: Description,
+    pub description: Description,
     /// See [`Music`].
-    music: Music,
+    pub music: Music,
     /// See [`Author`].
-    author: Author,
+    pub author: Author,
     /// See [`Brand`].
-    brand: Brand,
+    pub brand: Brand,
     /// See [`Uploaded`].
-    uploaded: Uploaded,
+    pub uploaded: Uploaded,
     /// See [`Edited`].
-    edited: Edited,
+    pub edited: Edited,
     /// See [`Burdens`].
-    burdens: Burdens,
+    pub burdens: Burdens,
     /// See [`Tiles`].
-    tiles: Tiles,
+    pub tiles: Tiles,
     /// See [`Objects`].
-    objects: Objects,
+    pub objects: Objects,
+    /// See [`Key`].
+    ///
+    /// Currently, this is always set to 0
+    /// unless a level is parsed for the
+    /// Web UI. This is a really bad and
+    /// non-idiomatic way to do this, but
+    /// it was the simplest for now. TODO
+    pub key: Key,
 }
 
 impl Level<Unvalidated> {
@@ -323,6 +330,7 @@ impl<State> Level<State> {
             burdens,
             tiles,
             objects,
+            key: Key(Ulid(0)),
         })
     }
 }

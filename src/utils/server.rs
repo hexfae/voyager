@@ -1,7 +1,10 @@
 //! Contains [`AppState`], related methods, and
 //! various Axum server-related functions.
 use crate::prelude::*;
-use crate::utils::{level::Validated, routers, webui};
+use crate::utils::{
+    level::{Key, Validated},
+    routers, webui,
+};
 use axum::{
     async_trait,
     http::StatusCode,
@@ -143,7 +146,9 @@ impl AppState {
     /// Deletes a level from the database, if it exists.
     pub fn delete(&self, input: &str) -> Result<StatusCode> {
         let key = input.parse::<Ulid>()?;
-        if self.levels.remove(&key).is_some() {
+        let deleted = self.levels.remove(&key).is_some();
+        self.save();
+        if deleted {
             Ok(StatusCode::NO_CONTENT)
         } else {
             Err(Error::LevelNotFound)
@@ -162,6 +167,22 @@ impl AppState {
             .map(|level| level.data.to_string())
             .collect::<Vec<String>>()
             .join(",")
+    }
+
+    // TODO: this function is a whole mess!
+    #[must_use]
+    pub fn keys_and_parsed_levels(&self) -> Vec<Parsed> {
+        self.levels
+            .clone()
+            .into_iter()
+            .filter_map(|(key, level)| {
+                let level = level.into_parsed().map(|mut level| {
+                    level.key = Key(key);
+                    level
+                });
+                level.ok()
+            })
+            .collect::<Vec<Parsed>>()
     }
 }
 
@@ -187,6 +208,8 @@ fn create_router() -> Result<Router> {
 
     Ok(Router::new()
         .route("/voyager/webui", get(webui::index::index))
+        .route_layer(login_required!(Backend, login_url = "/voyager/webui/login"))
+        .route("/voyager/webui/delete/:key", post(webui::delete::delete))
         .route_layer(login_required!(Backend, login_url = "/voyager/webui/login"))
         .route("/voyager/webui/login", get(webui::login::get))
         .route("/voyager/webui/login", post(webui::login::post))

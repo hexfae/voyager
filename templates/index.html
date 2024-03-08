@@ -1,0 +1,51 @@
+<html>
+  <head>
+    <title>voyager</title>
+  </head>
+
+  <body>
+    <p>logged in as {{username}}</p>
+
+    <ul>
+      <table>
+        <tr>
+          <th>version</th>
+          <th>name</th>
+          <th>description</th>
+          <th>music</th>
+          <th>author</th>
+          <th>brand</th>
+          <th>uploaded</th>
+          <th>edited</th>
+          <th>burdens</th>
+          <th>tiles</th>
+          <th>objects</th>
+          <th>key</th>
+          <th>delete</th>
+        </tr>
+        {% for level in levels %}
+        <tr>
+          <td>{{ level.version }}</td>
+          <td>{{ level.name }}</td>
+          <td>{{ level.description }}</td>
+          <td>{{ level.music }}</td>
+          <td>{{ level.author }}</td>
+          <td>{{ level.brand }}</td>
+          <td>{{ level.uploaded }}</td>
+          <td>{{ level.edited }}</td>
+          <td>{{ level.burdens }}</td>
+          <td>{{ level.tiles }}</td>
+          <td>{{ level.objects }}</td>
+          <td>{{ level.key }}</td>
+          <td>
+            <form action="/voyager/webui/delete/{{ level.key }}" method="post">
+              <input type="submit" value="delete">
+            </form>
+          </td>
+        </tr>
+        
+        {% endfor %}
+      </table>
+    </ul>
+  </body>
+</html>

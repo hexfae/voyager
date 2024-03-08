@@ -1,21 +1,12 @@
 use crate::prelude::*;
 
 use axum::{
-    extract::Query,
     http::StatusCode,
     response::{Html, IntoResponse, Redirect},
     Form,
 };
-use serde::Deserialize;
 
-// This allows us to extract the "next" field from the query string. We use this
-// to redirect after log in.
-#[derive(Debug, Deserialize)]
-pub struct NextUrl {
-    next: Option<String>,
-}
-
-pub async fn get(Query(NextUrl { next }): Query<NextUrl>) -> Html<&'static str> {
+pub async fn get() -> Html<&'static str> {
     Html(
         r#"
         <!doctype html>
@@ -30,7 +21,7 @@ pub async fn get(Query(NextUrl { next }): Query<NextUrl>) -> Html<&'static str> 
 
                     <label>
                         password:
-                        <input type="text" name="password">
+                        <input type="password" name="password">
                     </label>
 
                     <input type="submit" value="submit">
