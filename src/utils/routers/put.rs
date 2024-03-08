@@ -6,7 +6,7 @@ use axum::{
     http::StatusCode,
 };
 use std::net::SocketAddr;
-use tracing::info;
+use tracing::{debug, info};
 
 /// Updates an already uploaded level in the database.
 ///
@@ -26,7 +26,8 @@ pub async fn put(
     input: String,
 ) -> Result<StatusCode> {
     let addr = addr.ip();
-    info!("PUT sent by {addr}: {input}");
+    info!("PUT sent by {addr}");
+    debug!("PUT sent by {addr}: {input}");
     if db.ip_is_banned(&addr) {
         return Err(Error::Banned);
     }

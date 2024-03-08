@@ -17,6 +17,7 @@ use dashmap::{DashMap, DashSet};
 use inquire::{min_length, Password, Text};
 use password_auth::generate_hash;
 use serde::{Deserialize, Serialize};
+use std::fs::create_dir;
 use std::net::IpAddr;
 use std::{
     fs::{read, write},
@@ -69,7 +70,7 @@ impl AppState {
     /// the file is corrupted).
     #[must_use]
     fn load() -> SharedAppState {
-        let input = read("voyager.db");
+        let input = read("voyager/levels.db");
         input.map_or_else(
             |_| {
                 info!("Existing database not found!");
@@ -88,7 +89,7 @@ impl AppState {
     fn save(&self) {
         match bincode::serialize(&self) {
             Ok(bytes) => {
-                if let Err(why) = write("voyager.db", bytes) {
+                if let Err(why) = write("voyager/levels.db", bytes) {
                     warn!("database could not be saved: {why}");
                 };
             }
@@ -98,7 +99,7 @@ impl AppState {
 
     /// Attempts to deserialize a Voyager database
     /// from bytes.
-
+    ///
     /// # Errors
     /// This function will return an error if
     /// deserializing it fails. Most likely, some
@@ -147,9 +148,8 @@ impl AppState {
     }
 
     /// Deletes a level from the database, if it exists.
-    pub fn delete(&self, input: &str) -> Result<StatusCode> {
-        let key = input.parse::<Key>()?;
-        let deleted = self.levels.remove(&key).is_some();
+    pub fn delete(&self, input: &Key) -> Result<StatusCode> {
+        let deleted = self.levels.remove(input).is_some();
         self.save();
         if deleted {
             Ok(StatusCode::NO_CONTENT)
@@ -161,6 +161,13 @@ impl AppState {
     pub fn ban(&self, input: &str) -> Result<()> {
         let ip = input.parse::<IpAddr>()?;
         self.banned_ips.insert(ip);
+        // clone because dashmap will deadlock otherwise
+        let levels = self.levels.clone();
+        for level in &levels {
+            if level.uploader == ip {
+                self.delete(&level.key)?;
+            }
+        }
         self.save();
         Ok(())
     }
@@ -204,12 +211,13 @@ pub async fn start_voyager() -> Result<()> {
 
 /// Creates a new [`Router`] for Voyager.
 fn create_router() -> Result<Router> {
+    let _ = create_dir("voyager");
     let levels = AppState::load();
 
     let session_store = MemoryStore::default();
     let session_layer = SessionManagerLayer::new(session_store).with_secure(false);
 
-    let backend = Backend::new()?;
+    let backend = Backend::load()?;
     let auth_layer = AuthManagerLayerBuilder::new(backend, session_layer).build();
 
     Ok(Router::new()
@@ -270,7 +278,7 @@ async fn shutdown_signal() {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
     id: i64,
     pub username: String,
@@ -289,12 +297,42 @@ impl AuthUser for User {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 pub struct Backend {
     users: std::collections::HashMap<i64, User>,
 }
 
 impl Backend {
+    fn load() -> Result<Self> {
+        let input = read("voyager/webui.db");
+        input.map_or_else(
+            |_| {
+                info!("Existing Web UI not found!");
+                Self::new()
+            },
+            |webui| {
+                info!("Existing Web UI user found!");
+                Ok(Self::from(&webui).expect("valid webui file"))
+            },
+        )
+    }
+
+    fn save(&self) {
+        match bincode::serialize(&self) {
+            Ok(bytes) => {
+                if let Err(why) = write("voyager/webui.db", bytes) {
+                    warn!("webui could not be saved: {why}");
+                };
+            }
+            Err(why) => warn!("webui could not be serialized: {why}"),
+        }
+    }
+
+    fn from(webui: &[u8]) -> Result<Self> {
+        let webui = bincode::deserialize(webui)?;
+        Ok(webui)
+    }
+
     fn new() -> Result<Self> {
         println!("please create a user for the webui!");
         let username = Text::new("username:")
@@ -303,7 +341,7 @@ impl Backend {
         let password = Password::new("password:")
             .with_validator(min_length!(8))
             .prompt()?;
-        Ok(Self {
+        let login = Self {
             users: std::collections::HashMap::from([(
                 1,
                 User {
@@ -312,7 +350,9 @@ impl Backend {
                     password_hash: generate_hash(password),
                 },
             )]),
-        })
+        };
+        login.save();
+        Ok(login)
     }
 }
 

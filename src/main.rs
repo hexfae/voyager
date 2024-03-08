@@ -14,7 +14,30 @@ mod utils;
 
 #[tokio::main]
 async fn main() -> prelude::Result<()> {
-    tracing_subscriber::fmt::init();
+    // file logger only periodically saves the logs to file.
+    // it will also saves the logs to a file when the guard
+    // is dropped (at the end of this scope)
+    let _guard = start_logging();
     tracing::info!("Voyager is launching.");
     utils::server::start_voyager().await
+}
+
+use tracing::level_filters::LevelFilter;
+use tracing_appender::non_blocking::WorkerGuard;
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, Layer};
+
+fn start_logging() -> WorkerGuard {
+    let file_appender = tracing_appender::rolling::daily("voyager/logs", "voyager.log");
+    let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+    let stdout_log = tracing_subscriber::fmt::layer().pretty();
+    let file_log = fmt::layer().with_writer(non_blocking);
+    tracing_subscriber::registry()
+        .with(
+            stdout_log
+                .with_filter(LevelFilter::INFO)
+                .and_then(file_log)
+                .with_filter(LevelFilter::DEBUG),
+        )
+        .init();
+    guard
 }

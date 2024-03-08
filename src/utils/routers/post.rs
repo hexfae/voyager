@@ -7,7 +7,6 @@ use axum::{
 };
 use std::net::SocketAddr;
 use tracing::info;
-use ulid::Ulid;
 
 /// Stages a level for uploading (if valid) and returns
 /// its key. An anti-orphan check [`orphanage`] is necessary.

@@ -1,13 +1,12 @@
 //! Contains the `Level` and `ParsedLevel` structs, related
 //! constants, and related wrapper types for `ParsedLevel`.
 
-use std::{marker::PhantomData, net::IpAddr, str::FromStr};
-
 use crate::prelude::*;
 use base64::{prelude::BASE64_STANDARD, Engine};
 use derive_more::Display;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use std::{marker::PhantomData, net::IpAddr, str::FromStr};
 use time::OffsetDateTime;
 use ulid::Ulid;
 
@@ -30,6 +29,13 @@ pub const BRAND_36_BITS: u64 = 0b1111_1111_1111_1111_1111_1111_1111_1111_1111;
 /// Equal to 2^4-1 or 15.
 pub const BURDENS_4_BITS: u8 = 0b1111;
 
+/// All possible characters from Endless Void's black hole format.
+///
+/// Currently, there is no (easy) way to check if a level is valid.
+/// Therefore, this is the best (easiest) way to check a level's validity.
+pub const BLACK_HOLE_FORMAT: &str =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=!";
+
 /// All available music choices in Void Stranger.
 ///
 /// NOTE: An empty string (`""`) is allowed and means ambience.
@@ -46,13 +52,6 @@ pub const VALID_MUSIC: [&str; 11] = [
     "msc_beesong",
     "msc_monstrail",
 ];
-
-/// All possible characters from Endless Void's black hole format.
-///
-/// Currently, there is no (easy) way to check if a level is valid.
-/// Therefore, this is the best (easiest) way to check a level's validity.
-pub const BLACK_HOLE_FORMAT: &str =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=!";
 
 /// A level's data, as sent to Endless Void.
 ///
@@ -114,9 +113,13 @@ pub struct Level<State = Unvalidated> {
     ///
     /// See [`Data`] for details.
     pub data: Data,
-    /// The level's current validity state. See [`Validated`] and [`Unvalidated`].
-    uploader: IpAddr,
+    /// The uploader's IP adress.
+    ///
+    /// Stored for logging and banning.
+    pub uploader: IpAddr,
+    /// The level's key.
     pub key: Key,
+    /// The level's current validity state. See [`Validated`] and [`Unvalidated`].
     state: PhantomData<State>,
 }
 
@@ -210,7 +213,7 @@ pub struct Objects(String);
 ///
 /// Encoded as a [ULID](https://github.com/ulid/spec) key.
 #[derive(Debug, Display, Clone, Copy, Serialize, Deserialize, Hash, Eq, PartialEq)]
-pub struct Key(pub Ulid);
+pub struct Key(Ulid);
 
 /// A parsed, validated Void Stranger level.
 ///
@@ -239,13 +242,8 @@ pub struct Parsed {
     /// See [`Objects`].
     pub objects: Objects,
     /// See [`Key`].
-    ///
-    /// Currently, this is always set to 0
-    /// unless a level is parsed for the
-    /// Web UI. This is a really bad and
-    /// non-idiomatic way to do this, but
-    /// it was the simplest for now. TODO
     pub key: Key,
+    /// See [`Uploader`].
     pub uploader: IpAddr,
 }
 
@@ -257,6 +255,7 @@ impl Level<Unvalidated> {
     /// The input is not validated at this point. Therefore,
     /// the level should be parsed (validated) using
     /// [`Self::into_parsed`] before insertion into the database.
+    /// See [`Data`] for details on validity.
     pub fn new(data: String, ip: IpAddr) -> Self {
         Self {
             data: Data(data),
@@ -267,8 +266,6 @@ impl Level<Unvalidated> {
     }
 
     /// Creates a new (possibly invalid) Void Stranger level, for PUT.
-    ///
-    /// Returns a level and its (possible) key.
     ///
     /// See [`Data`] for details on valid PUT input.
     ///
@@ -288,8 +285,7 @@ impl Level<Unvalidated> {
 }
 
 impl<State> Level<State> {
-    /// Parses and validates the level, returning
-    /// an appropriate [`Error`] if unsuccessful.
+    /// Parses and validates the level.
     pub fn into_parsed(self) -> Result<Parsed> {
         let (
             version,

@@ -10,7 +10,6 @@ use axum::{
 };
 use std::net::SocketAddr;
 use tracing::info;
-use ulid::Ulid;
 
 /// Returns a comma-separated list of all levels stored in the database.
 ///

@@ -3,9 +3,6 @@
 //! Notably, Voyager does not have (need)
 //! a "catch-all" generic error variant.
 
-use axum::http::StatusCode;
-use tracing::{info, warn};
-
 // for documentation
 #[allow(unused_imports)]
 use crate::utils::level::{
@@ -77,10 +74,13 @@ pub enum Error {
     /// level upload request, to make sure that the client received
     /// the key (to prevent orphan levels in the database). For PUT
     /// and DELETE, this is simply if the database has no matching level.
-    #[error("you have been banned")]
-    Banned,
     #[error("level not found")]
     LevelNotFound,
+    /// The user has been banned by use of the Web UI and is
+    /// no longer allowed to upload, edit, or delete levels.
+    #[error("you have been banned")]
+    Banned,
+    /// The given IP adress to ban by use of the Web UI was invalid.
     #[error("invalid ip")]
     InvalidIp(#[from] std::net::AddrParseError),
     /// On startup, if Voyager could not bind to the port 3000.
@@ -91,6 +91,8 @@ pub enum Error {
     /// file (`./voyager.db`) containing the stored levels.
     #[error("bincode (de)serialization error: {0}")]
     Bincode(#[from] bincode::Error),
+    /// On startup, an error occured when asking for a username
+    /// and password for the Web UI (probably a user interrupt).
     #[error("inquire error: {0}")]
     Inquire(#[from] inquire::InquireError),
 }
@@ -147,6 +149,9 @@ pub enum StringError {
     #[error("input was too short: 0 < 1")]
     TooShort,
 }
+
+use axum::http::StatusCode;
+use tracing::{info, warn};
 
 impl axum::response::IntoResponse for Error {
     // unavoidable big match statement

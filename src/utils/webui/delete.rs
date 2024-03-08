@@ -5,6 +5,8 @@ use axum::{
 };
 
 pub async fn delete(State(db): State<SharedAppState>, key: Path<String>) -> Redirect {
-    let _ = db.delete(key.as_str());
+    if let Ok(key) = &key.parse() {
+        let _ = db.delete(key);
+    }
     Redirect::to("/voyager/webui")
 }
