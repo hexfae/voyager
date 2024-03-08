@@ -14,7 +14,7 @@ pub async fn index(
     auth_session: AuthSession,
     State(db): State<SharedAppState>,
 ) -> impl IntoResponse {
-    let levels = db.keys_and_parsed_levels();
+    let levels = db.parsed_levels();
     auth_session
         .user
         .map_or(Html(r"unauthorized").into_response(), |user| {

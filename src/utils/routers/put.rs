@@ -27,16 +27,20 @@ pub async fn put(
 ) -> Result<StatusCode> {
     let addr = addr.ip();
     info!("PUT sent by {addr}: {input}");
+    if db.ip_is_banned(&addr) {
+        return Err(Error::Banned);
+    }
 
     // TODO: improve
-    let (level, key) = Level::new_from_put(&input)?;
+    let level = Level::new_from_put(&input, addr)?;
+    let key = level.key;
     let mut parsed = level.into_parsed()?;
 
     let old_level = db.get(&key)?;
     parsed.set_dates_to_now();
     parsed.set_uploaded_from(old_level)?;
     let level = parsed.into_level();
-    db.insert(key, level);
+    db.insert(level);
     info!("PUT success by {addr}.");
     Ok(StatusCode::OK)
 }

@@ -1,7 +1,7 @@
 //! Contains the `Level` and `ParsedLevel` structs, related
 //! constants, and related wrapper types for `ParsedLevel`.
 
-use std::marker::PhantomData;
+use std::{marker::PhantomData, net::IpAddr, str::FromStr};
 
 use crate::prelude::*;
 use base64::{prelude::BASE64_STANDARD, Engine};
@@ -115,6 +115,8 @@ pub struct Level<State = Unvalidated> {
     /// See [`Data`] for details.
     pub data: Data,
     /// The level's current validity state. See [`Validated`] and [`Unvalidated`].
+    uploader: IpAddr,
+    pub key: Key,
     state: PhantomData<State>,
 }
 
@@ -207,7 +209,7 @@ pub struct Objects(String);
 /// The level's private key.
 ///
 /// Encoded as a [ULID](https://github.com/ulid/spec) key.
-#[derive(Debug, Display, Clone, Serialize, Deserialize)]
+#[derive(Debug, Display, Clone, Copy, Serialize, Deserialize, Hash, Eq, PartialEq)]
 pub struct Key(pub Ulid);
 
 /// A parsed, validated Void Stranger level.
@@ -244,6 +246,7 @@ pub struct Parsed {
     /// non-idiomatic way to do this, but
     /// it was the simplest for now. TODO
     pub key: Key,
+    pub uploader: IpAddr,
 }
 
 impl Level<Unvalidated> {
@@ -254,9 +257,11 @@ impl Level<Unvalidated> {
     /// The input is not validated at this point. Therefore,
     /// the level should be parsed (validated) using
     /// [`Self::into_parsed`] before insertion into the database.
-    pub const fn new(input: String) -> Self {
+    pub fn new(data: String, ip: IpAddr) -> Self {
         Self {
-            data: Data(input),
+            data: Data(data),
+            uploader: ip,
+            key: Key::new(),
             state: PhantomData::<Unvalidated>,
         }
     }
@@ -271,15 +276,14 @@ impl Level<Unvalidated> {
     /// the level should be parsed (validated) using
     /// [`Self::into_parsed`] before insertion into the database.
     /// See [`Data`] for details on validity.
-    pub fn new_from_put(input: &str) -> Result<(Self, Ulid)> {
+    pub fn new_from_put(input: &str, ip: IpAddr) -> Result<Self> {
         let (input, key) = input.rsplit_once('|').ok_or(Error::InvalidStructure)?;
-        Ok((
-            Self {
-                data: Data(input.into()),
-                state: PhantomData::<Unvalidated>,
-            },
-            key.parse()?,
-        ))
+        Ok(Self {
+            data: Data(input.into()),
+            uploader: ip,
+            key: key.parse()?,
+            state: PhantomData::<Unvalidated>,
+        })
     }
 }
 
@@ -317,6 +321,8 @@ impl<State> Level<State> {
         let burdens = Burdens::try_from(burdens)?;
         let tiles = Tiles::try_from(tiles)?;
         let objects = Objects::try_from(objects)?;
+        let key = self.key;
+        let ip = self.uploader;
 
         Ok(Parsed {
             version,
@@ -330,7 +336,8 @@ impl<State> Level<State> {
             burdens,
             tiles,
             objects,
-            key: Key(Ulid(0)),
+            key,
+            uploader: ip,
         })
     }
 }
@@ -380,8 +387,16 @@ impl Parsed {
         let data = format!("{version}|{name}|{description}|{music}|{author}|{brand}|{uploaded}|{edited}|{burdens}|{tiles}|{objects}");
         Level {
             data: Data(data),
+            key: self.key,
+            uploader: self.uploader,
             state: PhantomData::<Validated>,
         }
+    }
+}
+
+impl Key {
+    fn new() -> Self {
+        Self(Ulid::new())
     }
 }
 
@@ -540,6 +555,14 @@ impl TryFrom<&str> for Objects {
             return Err(Error::InvalidObjects);
         }
         Ok(Self(input.to_string()))
+    }
+}
+
+impl FromStr for Key {
+    type Err = Error;
+
+    fn from_str(input: &str) -> std::prelude::v1::Result<Self, Self::Err> {
+        Ok(Self(input.parse()?))
     }
 }
 

@@ -21,6 +21,9 @@ pub async fn delete(
     key: String,
 ) -> Result<StatusCode> {
     let addr = addr.ip();
+    if db.ip_is_banned(&addr) {
+        return Err(Error::Banned);
+    }
     info!("DELETE sent by {addr}");
     db.delete(&key)
 }

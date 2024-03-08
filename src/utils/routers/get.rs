@@ -50,8 +50,8 @@ pub async fn levels_exist(
     let split_keys = keys.split(',').collect::<Vec<&str>>();
     let keys = split_keys
         .iter()
-        .filter_map(|key| key.parse::<Ulid>().ok())
-        .collect::<Vec<Ulid>>();
+        .filter_map(|key| key.parse::<Key>().ok())
+        .collect::<Vec<Key>>();
     if keys.len() != split_keys.len() {
         info!("GET levels check failed by {addr}; one or more keys were invalid!");
         // most probable error

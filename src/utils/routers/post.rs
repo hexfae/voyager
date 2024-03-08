@@ -23,17 +23,20 @@ pub async fn post(
 ) -> Result<(StatusCode, String)> {
     let addr = addr.ip();
     info!("POST sent by {addr}: {level}");
+    if db.ip_is_banned(&addr) {
+        return Err(Error::Banned);
+    }
 
-    let level = Level::new(level);
+    let level = Level::new(level, addr);
     let mut parsed = level.into_parsed()?;
     parsed.set_dates_to_now();
     info!("POST completed:\n{parsed}");
 
     let level = parsed.into_level();
-    let id = Ulid::new();
+    let key = level.key.to_string();
 
-    db.insert_orphan(id, level);
-    Ok((StatusCode::CREATED, id.to_string()))
+    db.insert_orphan(level);
+    Ok((StatusCode::CREATED, key))
 }
 
 /// Moves a level from the orphan list to the level list.

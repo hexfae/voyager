@@ -77,8 +77,12 @@ pub enum Error {
     /// level upload request, to make sure that the client received
     /// the key (to prevent orphan levels in the database). For PUT
     /// and DELETE, this is simply if the database has no matching level.
+    #[error("you have been banned")]
+    Banned,
     #[error("level not found")]
     LevelNotFound,
+    #[error("invalid ip")]
+    InvalidIp(#[from] std::net::AddrParseError),
     /// On startup, if Voyager could not bind to the port 3000.
     /// Most likely, another application is using it.
     #[error("io error: {0}")]
@@ -162,6 +166,7 @@ impl axum::response::IntoResponse for Error {
                 warn!("{why}");
                 StatusCode::INTERNAL_SERVER_ERROR
             }
+            Self::Banned => StatusCode::FORBIDDEN,
             other => {
                 info!("{other}");
                 StatusCode::BAD_REQUEST

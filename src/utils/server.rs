@@ -1,10 +1,7 @@
 //! Contains [`AppState`], related methods, and
 //! various Axum server-related functions.
 use crate::prelude::*;
-use crate::utils::{
-    level::{Key, Validated},
-    routers, webui,
-};
+use crate::utils::{level::Validated, routers, webui};
 use axum::{
     async_trait,
     http::StatusCode,
@@ -16,10 +13,11 @@ use axum_login::{
     tower_sessions::{MemoryStore, SessionManagerLayer},
     AuthManagerLayerBuilder, AuthUser, AuthnBackend, UserId,
 };
-use dashmap::DashMap;
+use dashmap::{DashMap, DashSet};
 use inquire::{min_length, Password, Text};
 use password_auth::generate_hash;
 use serde::{Deserialize, Serialize};
+use std::net::IpAddr;
 use std::{
     fs::{read, write},
     net::SocketAddr,
@@ -29,7 +27,6 @@ use std::{
 use tokio::signal;
 use tower_http::timeout::TimeoutLayer;
 use tracing::{info, warn};
-use ulid::Ulid;
 
 // for documentation
 #[allow(unused_imports)]
@@ -43,9 +40,10 @@ pub type SharedAppState = Arc<AppState>;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AppState {
     /// Every key and its matching uploaded, validated level.
-    levels: DashMap<Ulid, Level<Validated>>,
+    levels: DashMap<Key, Level<Validated>>,
     /// Every key and its matching validated orphan (see [`orphanage`]).
-    orphans: DashMap<Ulid, Level<Validated>>,
+    orphans: DashMap<Key, Level<Validated>>,
+    banned_ips: DashSet<IpAddr>,
 }
 
 impl AppState {
@@ -55,6 +53,7 @@ impl AppState {
         Arc::new(Self {
             levels: DashMap::new(),
             orphans: DashMap::new(),
+            banned_ips: DashSet::new(),
         })
     }
 
@@ -111,33 +110,37 @@ impl AppState {
     }
 
     /// Inserts a level and its key and saves to a file.
-    pub fn insert(&self, key: Ulid, level: Level<Validated>) {
-        self.levels.insert(key, level);
+    pub fn insert(&self, level: Level<Validated>) {
+        self.levels.insert(level.key, level);
         self.save();
     }
 
     /// Inserts an orphan and its key and saves to a file.
-    pub fn insert_orphan(&self, key: Ulid, level: Level<Validated>) {
-        self.orphans.insert(key, level);
+    pub fn insert_orphan(&self, level: Level<Validated>) {
+        self.orphans.insert(level.key, level);
         self.save();
     }
 
     /// Checks if the database contains the specified key.
     #[must_use]
-    pub fn contains(&self, input: &Ulid) -> bool {
+    pub fn contains(&self, input: &Key) -> bool {
         self.levels.contains_key(input)
+    }
+
+    pub fn ip_is_banned(&self, input: &IpAddr) -> bool {
+        self.banned_ips.contains(input)
     }
 
     /// Moves a level and its key from the orphans list
     /// to the levels list, if found.
-    pub fn adopt_orphan(&self, input: &Ulid) -> Result<()> {
-        let (level, key) = self.orphans.remove(input).ok_or(Error::LevelNotFound)?;
-        self.insert(level, key);
+    pub fn adopt_orphan(&self, input: &Key) -> Result<()> {
+        let (_, level) = self.orphans.remove(input).ok_or(Error::LevelNotFound)?;
+        self.insert(level);
         Ok(())
     }
 
     /// Get a clone of a level from the database, if it exists.
-    pub fn get(&self, input: &Ulid) -> Result<Level<Validated>> {
+    pub fn get(&self, input: &Key) -> Result<Level<Validated>> {
         self.levels
             .get(input)
             .map_or_else(|| Err(Error::LevelNotFound), |level| Ok(level.clone()))
@@ -145,7 +148,7 @@ impl AppState {
 
     /// Deletes a level from the database, if it exists.
     pub fn delete(&self, input: &str) -> Result<StatusCode> {
-        let key = input.parse::<Ulid>()?;
+        let key = input.parse::<Key>()?;
         let deleted = self.levels.remove(&key).is_some();
         self.save();
         if deleted {
@@ -153,6 +156,13 @@ impl AppState {
         } else {
             Err(Error::LevelNotFound)
         }
+    }
+
+    pub fn ban(&self, input: &str) -> Result<()> {
+        let ip = input.parse::<IpAddr>()?;
+        self.banned_ips.insert(ip);
+        self.save();
+        Ok(())
     }
 
     /// Returns a comma-separated lists of all stored levels.
@@ -171,17 +181,13 @@ impl AppState {
 
     // TODO: this function is a whole mess!
     #[must_use]
-    pub fn keys_and_parsed_levels(&self) -> Vec<Parsed> {
+    pub fn parsed_levels(&self) -> Vec<Parsed> {
         self.levels
             .clone()
-            .into_iter()
-            .filter_map(|(key, level)| {
-                let level = level.into_parsed().map(|mut level| {
-                    level.key = Key(key);
-                    level
-                });
-                level.ok()
-            })
+            .into_read_only()
+            .values()
+            .cloned()
+            .filter_map(|level| level.into_parsed().ok())
             .collect::<Vec<Parsed>>()
     }
 }
@@ -210,6 +216,8 @@ fn create_router() -> Result<Router> {
         .route("/voyager/webui", get(webui::index::index))
         .route_layer(login_required!(Backend, login_url = "/voyager/webui/login"))
         .route("/voyager/webui/delete/:key", post(webui::delete::delete))
+        .route_layer(login_required!(Backend, login_url = "/voyager/webui/login"))
+        .route("/voyager/webui/ban/:ip", post(webui::ban::ban))
         .route_layer(login_required!(Backend, login_url = "/voyager/webui/login"))
         .route("/voyager/webui/login", get(webui::login::get))
         .route("/voyager/webui/login", post(webui::login::post))

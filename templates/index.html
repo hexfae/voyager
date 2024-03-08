@@ -21,7 +21,9 @@
           <th>tiles</th>
           <th>objects</th>
           <th>key</th>
+          <th>ip</th>
           <th>delete</th>
+          <th>ip ban</th>
         </tr>
         {% for level in levels %}
         <tr>
@@ -37,9 +39,15 @@
           <td>{{ level.tiles }}</td>
           <td>{{ level.objects }}</td>
           <td>{{ level.key }}</td>
+          <td>{{ level.uploader }}</td>
           <td>
             <form action="/voyager/webui/delete/{{ level.key }}" method="post">
               <input type="submit" value="delete">
+            </form>
+          </td>
+          <td>
+            <form action="/voyager/webui/ban/{{ level.uploader }}" method="post">
+              <input type="submit" value="Ban This Kid">
             </form>
           </td>
         </tr>
