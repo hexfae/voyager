@@ -39,7 +39,7 @@ pub const BLACK_HOLE_FORMAT: &str =
 /// All available music choices in Void Stranger.
 ///
 /// NOTE: An empty string (`""`) is allowed and means ambience.
-pub const VALID_MUSIC: [&str; 13] = [
+pub const VALID_MUSIC: [&str; 18] = [
     "", // ambience
     "msc_001",
     "msc_dungeon_wings",
@@ -48,11 +48,16 @@ pub const VALID_MUSIC: [&str; 13] = [
     "msc_013",
     "msc_gorcircle_lo",
     "msc_levcircle",
+    "msc_escapewithfriend",
     "msc_cifcircle",
+    "msc_006",
     "msc_beesong",
     "msc_themeofcif",
     "msc_monstrail",
     "msc_endless",
+    "msc_stg_extraboss",
+    "msc_rytmi2",
+    "msc_test2",
 ];
 
 /// A level's data, as sent to Endless Void.
