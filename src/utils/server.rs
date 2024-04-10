@@ -15,7 +15,7 @@ use axum_login::{
 };
 use dashmap::{DashMap, DashSet};
 use inquire::{min_length, Password, Text};
-use password_auth::generate_hash;
+use password_auth::{generate_hash, verify_password};
 use serde::{Deserialize, Serialize};
 use std::fs::create_dir;
 use std::net::IpAddr;
@@ -367,17 +367,24 @@ pub struct Credentials {
 impl AuthnBackend for Backend {
     type User = User;
     type Credentials = Credentials;
-    type Error = std::convert::Infallible;
+    type Error = Error;
 
     async fn authenticate(
         &self,
-        Credentials { username, .. }: Self::Credentials,
-    ) -> std::result::Result<Option<Self::User>, Self::Error> {
-        Ok(self
+        Credentials {
+            username, password, ..
+        }: Self::Credentials,
+    ) -> Result<Option<Self::User>> {
+        let user = self
             .users
             .values()
             .find(|user| user.username == username)
-            .cloned())
+            .cloned();
+
+        tokio::task::spawn_blocking(|| {
+            Ok(user.filter(|user| verify_password(password, &user.password_hash).is_ok()))
+        })
+        .await?
     }
 
     async fn get_user(

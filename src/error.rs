@@ -83,6 +83,9 @@ pub enum Error {
     /// The given IP adress to ban by use of the Web UI was invalid.
     #[error("invalid ip")]
     InvalidIp(#[from] std::net::AddrParseError),
+    /// An error occured during password hashing for Web UI login.
+    #[error("tokio task join error in webui: {0}")]
+    TaskJoin(#[from] tokio::task::JoinError),
     /// On startup, if Voyager could not bind to the port 3000.
     /// Most likely, another application is using it.
     #[error("io error: {0}")]

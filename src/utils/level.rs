@@ -355,7 +355,7 @@ impl Parsed {
             .to_string()
             // 20240227
             .replace('-', "");
-        self.uploaded.0 = now.clone();
+        self.uploaded.0.clone_from(&now);
         self.edited.0 = now;
     }
 
