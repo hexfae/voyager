@@ -17,7 +17,7 @@ use dashmap::{DashMap, DashSet};
 use inquire::{min_length, Password, Text};
 use password_auth::{generate_hash, verify_password};
 use serde::{Deserialize, Serialize};
-use std::fs::create_dir;
+use std::fs::create_dir_all;
 use std::net::IpAddr;
 use std::{
     fs::{read, write},
@@ -25,6 +25,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
+use time::OffsetDateTime;
 use tokio::signal;
 use tower_http::timeout::TimeoutLayer;
 use tracing::{info, warn};
@@ -94,6 +95,30 @@ impl AppState {
                 };
             }
             Err(why) => warn!("database could not be serialized: {why}"),
+        }
+    }
+
+    fn backup(&self) -> Result<usize> {
+        let now = OffsetDateTime::now_utc()
+            // 2024-02-27
+            .date()
+            .to_string();
+        let path = format!("voyager/backups/{now}.db");
+
+        match bincode::serialize(&self) {
+            Ok(bytes) => {
+                let len = bytes.len();
+                if let Err(why) = write(path, bytes) {
+                    warn!("database could not be saved: {why}");
+                    Err(why.into())
+                } else {
+                    Ok(len)
+                }
+            }
+            Err(why) => {
+                warn!("database could not be serialized: {why}");
+                Err(why.into())
+            }
         }
     }
 
@@ -209,10 +234,25 @@ pub async fn start_voyager() -> Result<()> {
     serve_app(router).await
 }
 
+async fn backup_state_daily(app_state: SharedAppState) {
+    let one_day = Duration::from_secs(60 * 60 * 24);
+    let mut interval = tokio::time::interval(one_day);
+
+    loop {
+        interval.tick().await;
+        match app_state.backup() {
+            Ok(usize) => tracing::info!("backup saved: {usize} bytes"),
+            Err(why) => tracing::warn!("backup could not be saved: {why}"),
+        }
+    }
+}
+
 /// Creates a new [`Router`] for Voyager.
 fn create_router() -> Result<Router> {
-    let _ = create_dir("voyager");
+    let _ = create_dir_all("voyager/backups");
     let levels = AppState::load();
+
+    tokio::spawn(backup_state_daily(levels.clone()));
 
     let session_store = MemoryStore::default();
     let session_layer = SessionManagerLayer::new(session_store).with_secure(false);
