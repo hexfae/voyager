@@ -8,6 +8,8 @@ pub use crate::utils::level::Parsed;
 pub use crate::utils::server::Backend;
 pub use crate::utils::server::Credentials;
 pub use crate::utils::server::SharedAppState;
+/// Authentication session used for
+/// logging in to the Web UI.
 pub type AuthSession = axum_login::AuthSession<Backend>;
 /// The common result type used throughout
 /// Voyager, using Voyager's [`Error`].

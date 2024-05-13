@@ -37,14 +37,17 @@ use crate::utils::routers::post::orphanage;
 /// Thread-safe app state, used across Voyager.
 pub type SharedAppState = Arc<AppState>;
 
-/// Poor man's database. Two [`DashMap`]s
-/// of levels and orphans respectively.
+/// Poor man's database.
+///
+/// Two [`DashMap`]s of levels and orphans respectively,
+/// along with a [`DashSet`] of banned IPs.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AppState {
     /// Every key and its matching uploaded, validated level.
     levels: DashMap<Key, Level<Validated>>,
     /// Every key and its matching validated orphan (see [`orphanage`]).
     orphans: DashMap<Key, Level<Validated>>,
+    /// Every banned IP address. Bans are given out manually in the Web UI.
     banned_ips: DashSet<IpAddr>,
 }
 
@@ -60,9 +63,9 @@ impl AppState {
     }
 
     /// Attempts to load a Voyager database from
-    /// `./voyager.db`. If it fails (likely due
+    /// `voyager/levels.db`. If it fails (likely due
     /// to it not yet existing), it instead creates
-    /// a new one using `Self::new()`;
+    /// a new one using `Self::new()`.
     ///
     /// # Panics
     /// Panics if a Voyager database is found, but
@@ -84,7 +87,8 @@ impl AppState {
         )
     }
 
-    /// Attempts to save itself to `./voyager.db`.
+    /// Attempts to save itself to `voyager/levels.db`.
+    ///
     /// If it fails (likely due to file permissions),
     /// it will log a warning and keep running.
     fn save(&self) {
@@ -98,6 +102,9 @@ impl AppState {
         }
     }
 
+    /// Performs a backup to `voyager/backups/yyyy-mm-dd.db`.
+    ///
+    /// Used for daily backups.
     fn backup(&self) -> Result<usize> {
         let now = OffsetDateTime::now_utc()
             // 2024-02-27
@@ -153,6 +160,7 @@ impl AppState {
         self.levels.contains_key(input)
     }
 
+    /// Checks if the given IP address is banned.
     pub fn ip_is_banned(&self, input: &IpAddr) -> bool {
         self.banned_ips.contains(input)
     }
@@ -183,6 +191,11 @@ impl AppState {
         }
     }
 
+    /// Bans the specified IP address from Voyager.
+    ///
+    /// Specifically, it will add the IP address to
+    /// the ban list, as well as delete all levels
+    /// uploaded by that IP address.
     pub fn ban(&self, input: &str) -> Result<()> {
         let ip = input.parse::<IpAddr>()?;
         self.banned_ips.insert(ip);
@@ -197,7 +210,8 @@ impl AppState {
         Ok(())
     }
 
-    /// Returns a comma-separated lists of all stored levels.
+    /// Returns a comma-separated list of all stored levels
+    /// in Endless Void's level format.
     ///
     /// See [`Data`] for details on level format.
     #[must_use]
@@ -213,6 +227,7 @@ impl AppState {
 
     // TODO: this function is a whole mess!
     #[must_use]
+    /// Parses and returns all stored levels.
     pub fn parsed_levels(&self) -> Vec<Parsed> {
         self.levels
             .clone()
@@ -234,6 +249,7 @@ pub async fn start_voyager() -> Result<()> {
     serve_app(router).await
 }
 
+/// Performs daily backups at `voyager/backups/yyyy-mm-dd`.
 async fn backup_state_daily(app_state: SharedAppState) {
     let one_day = Duration::from_secs(60 * 60 * 24);
     let mut interval = tokio::time::interval(one_day);
@@ -319,9 +335,16 @@ async fn shutdown_signal() {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// A Web UI user. Used for administrative tasks.
 pub struct User {
+    /// User's id. Always 1.
+    ///
+    /// This is because the current implementation
+    /// only allows for one user (an admin).
     id: i64,
+    /// User's username.
     pub username: String,
+    /// User's password hash.
     password_hash: String,
 }
 
@@ -338,11 +361,26 @@ impl AuthUser for User {
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
+/// Web UI backend.
 pub struct Backend {
+    /// All Web UI users.
+    ///
+    /// Currently, there can only be one (an admin).
     users: std::collections::HashMap<i64, User>,
 }
 
 impl Backend {
+    /// Attempts to load a Web UI user from
+    /// `voyager/webui.db`. If it fails (likely due
+    /// to it not yet existing), it instead creates
+    /// a new one using `Self::new()`, which will
+    /// ask for a username and password.
+    ///
+    /// # Panics
+    /// Panics if a Voyager database is found, but
+    /// deserializing it fails. Most likely, some
+    /// data structure had a breaking change (or
+    /// the file is corrupted).
     fn load() -> Result<Self> {
         let input = read("voyager/webui.db");
         input.map_or_else(
@@ -357,6 +395,10 @@ impl Backend {
         )
     }
 
+    /// Attempts to save itself to `voyager/webui.db`.
+    ///
+    /// If it fails (likely due to file permissions),
+    /// it will log a warning and keep running.
     fn save(&self) {
         match bincode::serialize(&self) {
             Ok(bytes) => {
@@ -368,11 +410,23 @@ impl Backend {
         }
     }
 
+    /// Attempts to deserialize a Web UI user
+    /// from bytes.
+    ///
+    /// # Errors
+    /// This function will return an error if
+    /// deserializing it fails. Most likely, some
+    /// data structure had a breaking change (or
+    /// the file is corrupted).
     fn from(webui: &[u8]) -> Result<Self> {
         let webui = bincode::deserialize(webui)?;
         Ok(webui)
     }
 
+    /// Asks for a username and password on the CLI.
+    ///
+    /// The name must be at least 2 characters long.
+    /// The password must be at least 8 characters long.
     fn new() -> Result<Self> {
         println!("please create a user for the webui!");
         let username = Text::new("username:")
@@ -397,10 +451,15 @@ impl Backend {
 }
 
 #[derive(Clone, Deserialize)]
+/// A user's credentials, used for authentication.
 pub struct Credentials {
+    /// User's username.
     pub username: String,
+    /// User's password.
+    ///
+    /// Note: This is never stored nor logged. This
+    /// is immediately hashed and then dropped.
     pub password: String,
-    pub next: Option<String>,
 }
 
 #[async_trait]

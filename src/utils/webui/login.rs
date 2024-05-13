@@ -1,3 +1,5 @@
+//! Log in.
+
 use crate::prelude::*;
 
 use axum::{
@@ -6,6 +8,7 @@ use axum::{
     Form,
 };
 
+/// The login page.
 pub async fn get() -> Html<&'static str> {
     Html(
         r#"
@@ -32,6 +35,11 @@ pub async fn get() -> Html<&'static str> {
     )
 }
 
+/// The function responsible for authenticating a login.
+///
+/// Returns 401 UNAUTHORIZED if the login is incorrect,
+/// 500 INTERNAL SERVER ERROR if something went wrong,
+/// or redirects to `/voyager/webui` if login succeeded.
 pub async fn post(
     mut auth_session: AuthSession,
     Form(creds): Form<Credentials>,
@@ -46,11 +54,5 @@ pub async fn post(
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
 
-    creds
-        .next
-        .map_or_else(
-            || Redirect::to("/voyager/webui"),
-            |next| Redirect::to(&next),
-        )
-        .into_response()
+    Redirect::to("/voyager/webui").into_response()
 }

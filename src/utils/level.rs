@@ -398,6 +398,7 @@ impl Parsed {
 }
 
 impl Key {
+    /// Generates a new ULID key for a level.
     fn new() -> Self {
         Self(Ulid::new())
     }
