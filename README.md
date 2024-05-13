@@ -4,11 +4,22 @@ Voyager is the server back-end for [Endless Void](https://github.com/Skirlez/voi
 
 ## Building
 
-Same as (mostly) any other Rust project, `cargo build [--release]`.
+`cargo build [--release]`
 
 ## Running
 
-Voyager attempts to bind to port 3000. Voyager also looks for or creates a `voyager.db` file in the current directory.
+Voyager uses port 3000. Voyager also creates the following directories and files:
+
+- `voyager/`
+- `voyager/logs/`
+- `voyager/backups/`
+- `voyager/webui.db`
+- `voyager/levels.db`
+
+Logs are saved on a per-day basis as `voyager/logs/voyager.log.yyyy-mm-dd`.
+
+Backups are made every 24-hours as `voyager/backups/yyyy-mm-dd.db`
+
 
 ## Usage
 
@@ -19,6 +30,5 @@ A Web UI is available at `/voyager/webui`. The Web UI may be used for administra
 ## To-do list
 
 - [ ] Level packs.
-- [ ] Web UI (for administration).
 - [ ] Comprehensive logging.
 - [ ] Testing?
