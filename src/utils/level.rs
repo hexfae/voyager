@@ -36,30 +36,6 @@ pub const BURDENS_4_BITS: u8 = 0b1111;
 pub const BLACK_HOLE_FORMAT: &str =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=!";
 
-/// All available music choices in Void Stranger.
-///
-/// NOTE: An empty string (`""`) is allowed and means ambience.
-pub const VALID_MUSIC: [&str; 18] = [
-    "", // ambience
-    "msc_001",
-    "msc_dungeon_wings",
-    "msc_beecircle",
-    "msc_dungeongroove",
-    "msc_013",
-    "msc_gorcircle_lo",
-    "msc_levcircle",
-    "msc_escapewithfriend",
-    "msc_cifcircle",
-    "msc_006",
-    "msc_beesong",
-    "msc_themeofcif",
-    "msc_monstrail",
-    "msc_endless",
-    "msc_stg_extraboss",
-    "msc_rytmi2",
-    "msc_test2",
-];
-
 /// A level's data, as sent to Endless Void.
 ///
 /// The format is as follows:
@@ -293,7 +269,7 @@ impl Level<Unvalidated> {
 
 impl<State> Level<State> {
     /// Parses and validates the level.
-    pub fn into_parsed(self) -> Result<Parsed> {
+    pub fn into_parsed(self, config: &VoyagerConfig) -> Result<Parsed> {
         let (
             version,
             name,
@@ -313,10 +289,10 @@ impl<State> Level<State> {
             .collect_tuple()
             .ok_or(Error::InvalidStructure)?;
 
-        let version = Version::try_from(version)?;
+        let version = Version::try_from(version, config)?;
         let name = Name::try_from(name)?;
         let description = Description::try_from(description)?;
-        let music = Music::try_from(music)?;
+        let music = Music::try_from(music, config)?;
         let author = Author::try_from(author)?;
         let brand = Brand::try_from(brand)?;
         let uploaded = Uploaded(uploaded.to_string());
@@ -365,8 +341,12 @@ impl Parsed {
     /// This is used for PUT requests, where the
     /// old level is gotten from the database to
     /// reference the level's original upload date.
-    pub fn set_uploaded_from(&mut self, input: Level<Validated>) -> Result<()> {
-        self.uploaded = input.into_parsed()?.uploaded;
+    pub fn set_uploaded_from(
+        &mut self,
+        input: Level<Validated>,
+        config: &VoyagerConfig,
+    ) -> Result<()> {
+        self.uploaded = input.into_parsed(config)?.uploaded;
         Ok(())
     }
 
@@ -404,16 +384,28 @@ impl Key {
     }
 }
 
-impl TryFrom<&str> for Version {
-    type Error = Error;
-
-    fn try_from(input: &str) -> std::prelude::v1::Result<Self, Self::Error> {
+impl Version {
+    /// Parses input as an integer for a level's format version
+    ///
+    /// # Errors
+    /// Returns an error if the input wasn't a number, was too
+    /// big, or was too small.
+    fn try_from(input: &str, config: &VoyagerConfig) -> Result<Self> {
         let version = input
             .parse::<u8>()
             .map_err(|why| Error::InvalidVersion(NumberError::NotANumber(why)))?;
-        if version != 1 {
+        let too_big = version > config.format_version;
+        let is_zero = version == 0;
+
+        if too_big {
             return Err(Error::InvalidVersion(NumberError::TooBig {
-                max: 1,
+                max: u64::from(config.format_version),
+                found: u64::from(version),
+            }));
+        }
+        if is_zero {
+            return Err(Error::InvalidVersion(NumberError::TooSmall {
+                min: 1,
                 found: u64::from(version),
             }));
         }
@@ -464,17 +456,20 @@ impl TryFrom<&str> for Description {
     }
 }
 
-impl TryFrom<&str> for Music {
-    type Error = Error;
-
-    fn try_from(input: &str) -> std::prelude::v1::Result<Self, Self::Error> {
+impl Music {
+    /// Parses input as music from Void Stranger.
+    ///
+    /// # Errors
+    /// Returns an error if the input was invalid Base64,
+    /// produced invalid UTF-8, or is not one of the allowed songs.
+    fn try_from(input: &str, config: &VoyagerConfig) -> Result<Self> {
         let music = String::from_utf8(
             BASE64_STANDARD
                 .decode(input)
                 .map_err(|why| Error::InvalidMusic(StringError::Base64(why)))?,
         )
         .map_err(|why| Error::InvalidMusic(StringError::FromUtf8(why)))?;
-        if !VALID_MUSIC.contains(&music.as_str()) {
+        if !config.allowed_songs.contains(&music) {
             return Err(Error::NotASong);
         }
         Ok(Self(music))

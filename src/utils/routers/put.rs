@@ -35,11 +35,12 @@ pub async fn put(
     // TODO: improve
     let level = Level::new_from_put(&input, addr)?;
     let key = level.key;
-    let mut parsed = level.into_parsed()?;
+    let config = db.config();
+    let mut parsed = level.into_parsed(config)?;
 
     let old_level = db.get(&key)?;
     parsed.set_dates_to_now();
-    parsed.set_uploaded_from(old_level)?;
+    parsed.set_uploaded_from(old_level, config)?;
     let level = parsed.into_level();
     db.insert(level);
     info!("PUT success by {addr}.");

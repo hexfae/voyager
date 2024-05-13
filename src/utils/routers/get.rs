@@ -19,9 +19,9 @@ use tracing::info;
 pub async fn get(
     State(db): State<SharedAppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> (StatusCode, String) {
+) -> String {
     info!("GET sent by {}", addr.ip());
-    (StatusCode::OK, db.levels())
+    db.levels()
 }
 
 // TODO: candidate for refactoring

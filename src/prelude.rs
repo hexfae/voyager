@@ -8,6 +8,7 @@ pub use crate::utils::level::Parsed;
 pub use crate::utils::server::Backend;
 pub use crate::utils::server::Credentials;
 pub use crate::utils::server::SharedAppState;
+pub use crate::utils::server::VoyagerConfig;
 /// Authentication session used for
 /// logging in to the Web UI.
 pub type AuthSession = axum_login::AuthSession<Backend>;

@@ -27,7 +27,7 @@ pub async fn post(
     }
 
     let level = Level::new(level, addr);
-    let mut parsed = level.into_parsed()?;
+    let mut parsed = level.into_parsed(db.config())?;
     parsed.set_dates_to_now();
     info!("POST completed:\n{parsed}");
 

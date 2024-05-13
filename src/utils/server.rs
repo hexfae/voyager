@@ -16,8 +16,9 @@ use axum_login::{
 use dashmap::{DashMap, DashSet};
 use inquire::{min_length, Password, Text};
 use password_auth::{generate_hash, verify_password};
+use ron::ser::PrettyConfig;
 use serde::{Deserialize, Serialize};
-use std::fs::create_dir_all;
+use std::fs::{create_dir_all, read_to_string};
 use std::net::IpAddr;
 use std::{
     fs::{read, write},
@@ -37,12 +38,17 @@ use crate::utils::routers::post::orphanage;
 /// Thread-safe app state, used across Voyager.
 pub type SharedAppState = Arc<AppState>;
 
-/// Poor man's database.
-///
-/// Two [`DashMap`]s of levels and orphans respectively,
-/// along with a [`DashSet`] of banned IPs.
+/// Voyager's data and configuration.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AppState {
+    /// Voyager's data (levels, orphans, banned IPs).
+    data: VoyagerData,
+    /// Voyager's configuration options.
+    config: VoyagerConfig,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct VoyagerData {
     /// Every key and its matching uploaded, validated level.
     levels: DashMap<Key, Level<Validated>>,
     /// Every key and its matching validated orphan (see [`orphanage`]).
@@ -51,17 +57,86 @@ pub struct AppState {
     banned_ips: DashSet<IpAddr>,
 }
 
-impl AppState {
-    /// Creates a new, empty Voyager database.
-    #[must_use]
-    fn new() -> SharedAppState {
-        Arc::new(Self {
-            levels: DashMap::new(),
-            orphans: DashMap::new(),
-            banned_ips: DashSet::new(),
-        })
+impl VoyagerData {
+    /// Attempts to save itself to `voyager/levels.db`.
+    ///
+    /// If it fails (likely due to file permissions),
+    /// it will log a warning and keep running.
+    pub fn save(&self) {
+        match bincode::serialize(&self) {
+            Ok(bytes) => {
+                if let Err(why) = write("voyager/levels.db", bytes) {
+                    warn!("database could not be saved: {why}");
+                };
+            }
+            Err(why) => warn!("database could not be serialized: {why}"),
+        };
     }
+}
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct VoyagerConfig {
+    /// All available music choices in Void Stranger.
+    ///
+    /// Note: An empty string (`""`) is allowed and means ambience.
+    pub allowed_songs: Vec<String>,
+    /// The current highest format version used by Endless Void.
+    ///
+    /// At the time of writing (2024-05-14), this is `2`.
+    pub format_version: u8,
+    /// The version number of the current latest release of Endless Void.
+    ///
+    /// At the time of writing (2024-05-14), this is `0.875`.
+    pub endless_void_version: String,
+}
+
+impl VoyagerConfig {
+    /// Attempts to save itself to `voyager/config.ron`.
+    ///
+    /// If it fails (likely due to file permissions),
+    /// it will log a warning and keep running.
+    pub fn save(&self) {
+        match ron::ser::to_string_pretty(&self, PrettyConfig::default()) {
+            Ok(bytes) => {
+                if let Err(why) = write("voyager/config.ron", bytes) {
+                    warn!("config could not be saved: {why}");
+                };
+            }
+            Err(why) => warn!("config could not be serialized: {why}"),
+        };
+    }
+}
+
+impl Default for VoyagerConfig {
+    fn default() -> Self {
+        Self {
+            allowed_songs: vec![
+                String::new(), // "", ambience
+                "msc_001".into(),
+                "msc_dungeon_wings".into(),
+                "msc_beecircle".into(),
+                "msc_dungeongroove".into(),
+                "msc_013".into(),
+                "msc_gorcircle_lo".into(),
+                "msc_levcircle".into(),
+                "msc_escapewithfriend".into(),
+                "msc_cifcircle".into(),
+                "msc_006".into(),
+                "msc_beesong".into(),
+                "msc_themeofcif".into(),
+                "msc_monstrail".into(),
+                "msc_endless".into(),
+                "msc_stg_extraboss".into(),
+                "msc_rytmi2".into(),
+                "msc_test2".into(),
+            ],
+            format_version: 2,
+            endless_void_version: "0.875".into(),
+        }
+    }
+}
+
+impl AppState {
     /// Attempts to load a Voyager database from
     /// `voyager/levels.db`. If it fails (likely due
     /// to it not yet existing), it instead creates
@@ -74,17 +149,31 @@ impl AppState {
     /// the file is corrupted).
     #[must_use]
     fn load() -> SharedAppState {
-        let input = read("voyager/levels.db");
-        input.map_or_else(
+        let data = read("voyager/levels.db").map_or_else(
             |_| {
-                info!("Existing database not found!");
-                Self::new()
+                info!("Existing database not found! One will be created...");
+                VoyagerData::default()
             },
-            |level| {
-                info!("Existing database found!");
-                Self::from(&level).expect("valid database file")
+            |bytes| {
+                info!("Existing database found.");
+                bincode::deserialize(&bytes).expect("valid database file")
             },
-        )
+        );
+
+        let config = read_to_string("voyager/config.ron").map_or_else(
+            |_| {
+                info!("Existing config not found! One will be created...");
+                VoyagerConfig::default()
+            },
+            |string| {
+                info!("Existing config found.");
+                ron::from_str(&string).expect("valid config file")
+            },
+        );
+
+        config.save();
+
+        Arc::new(Self { data, config })
     }
 
     /// Attempts to save itself to `voyager/levels.db`.
@@ -92,22 +181,15 @@ impl AppState {
     /// If it fails (likely due to file permissions),
     /// it will log a warning and keep running.
     fn save(&self) {
-        match bincode::serialize(&self) {
-            Ok(bytes) => {
-                if let Err(why) = write("voyager/levels.db", bytes) {
-                    warn!("database could not be saved: {why}");
-                };
-            }
-            Err(why) => warn!("database could not be serialized: {why}"),
-        }
+        self.data.save();
     }
 
     /// Performs a backup to `voyager/backups/yyyy-mm-dd.db`.
     ///
     /// Used for daily backups.
-    fn backup(&self) -> Result<usize> {
+    fn backup(&self) {
         let now = OffsetDateTime::now_utc()
-            // 2024-02-27
+            // 2024-05-13
             .date()
             .to_string();
         let path = format!("voyager/backups/{now}.db");
@@ -117,72 +199,62 @@ impl AppState {
                 let len = bytes.len();
                 if let Err(why) = write(path, bytes) {
                     warn!("database could not be saved: {why}");
-                    Err(why.into())
                 } else {
-                    Ok(len)
+                    info!("Backup saved: {len} bytes");
                 }
             }
             Err(why) => {
                 warn!("database could not be serialized: {why}");
-                Err(why.into())
             }
         }
     }
 
-    /// Attempts to deserialize a Voyager database
-    /// from bytes.
-    ///
-    /// # Errors
-    /// This function will return an error if
-    /// deserializing it fails. Most likely, some
-    /// data structure had a breaking change (or
-    /// the file is corrupted).
-    fn from(level: &[u8]) -> Result<SharedAppState> {
-        let levels = bincode::deserialize(level)?;
-        Ok(Arc::new(levels))
-    }
-
     /// Inserts a level and its key and saves to a file.
     pub fn insert(&self, level: Level<Validated>) {
-        self.levels.insert(level.key, level);
+        self.data.levels.insert(level.key, level);
         self.save();
     }
 
     /// Inserts an orphan and its key and saves to a file.
     pub fn insert_orphan(&self, level: Level<Validated>) {
-        self.orphans.insert(level.key, level);
+        self.data.orphans.insert(level.key, level);
         self.save();
     }
 
     /// Checks if the database contains the specified key.
     #[must_use]
     pub fn contains(&self, input: &Key) -> bool {
-        self.levels.contains_key(input)
+        self.data.levels.contains_key(input)
     }
 
     /// Checks if the given IP address is banned.
     pub fn ip_is_banned(&self, input: &IpAddr) -> bool {
-        self.banned_ips.contains(input)
+        self.data.banned_ips.contains(input)
     }
 
     /// Moves a level and its key from the orphans list
     /// to the levels list, if found.
     pub fn adopt_orphan(&self, input: &Key) -> Result<()> {
-        let (_, level) = self.orphans.remove(input).ok_or(Error::LevelNotFound)?;
+        let (_, level) = self
+            .data
+            .orphans
+            .remove(input)
+            .ok_or(Error::LevelNotFound)?;
         self.insert(level);
         Ok(())
     }
 
     /// Get a clone of a level from the database, if it exists.
     pub fn get(&self, input: &Key) -> Result<Level<Validated>> {
-        self.levels
+        self.data
+            .levels
             .get(input)
             .map_or_else(|| Err(Error::LevelNotFound), |level| Ok(level.clone()))
     }
 
     /// Deletes a level from the database, if it exists.
     pub fn delete(&self, input: &Key) -> Result<StatusCode> {
-        let deleted = self.levels.remove(input).is_some();
+        let deleted = self.data.levels.remove(input).is_some();
         self.save();
         if deleted {
             Ok(StatusCode::NO_CONTENT)
@@ -198,9 +270,9 @@ impl AppState {
     /// uploaded by that IP address.
     pub fn ban(&self, input: &str) -> Result<()> {
         let ip = input.parse::<IpAddr>()?;
-        self.banned_ips.insert(ip);
+        self.data.banned_ips.insert(ip);
         // clone because dashmap will deadlock otherwise
-        let levels = self.levels.clone();
+        let levels = self.data.levels.clone();
         for level in &levels {
             if level.uploader == ip {
                 self.delete(&level.key)?;
@@ -216,7 +288,8 @@ impl AppState {
     /// See [`Data`] for details on level format.
     #[must_use]
     pub fn levels(&self) -> String {
-        self.levels
+        self.data
+            .levels
             .clone()
             .into_read_only()
             .values()
@@ -229,13 +302,19 @@ impl AppState {
     #[must_use]
     /// Parses and returns all stored levels.
     pub fn parsed_levels(&self) -> Vec<Parsed> {
-        self.levels
+        self.data
+            .levels
             .clone()
             .into_read_only()
             .values()
             .cloned()
-            .filter_map(|level| level.into_parsed().ok())
+            .filter_map(|level| level.into_parsed(self.config()).ok())
             .collect::<Vec<Parsed>>()
+    }
+
+    /// Returns a reference to the Voyager config.
+    pub const fn config(&self) -> &VoyagerConfig {
+        &self.config
     }
 }
 
@@ -256,10 +335,7 @@ async fn backup_state_daily(app_state: SharedAppState) {
 
     loop {
         interval.tick().await;
-        match app_state.backup() {
-            Ok(usize) => tracing::info!("backup saved: {usize} bytes"),
-            Err(why) => tracing::warn!("backup could not be saved: {why}"),
-        }
+        app_state.backup();
     }
 }
 
@@ -287,6 +363,7 @@ fn create_router() -> Result<Router> {
         .route("/voyager/webui/login", post(webui::login::post))
         .route("/voyager", get(routers::get::get))
         .route("/voyager/:keys", get(routers::get::levels_exist))
+        .route("/voyager/version", get(routers::version::version))
         .route("/voyager", post(routers::post::post))
         .route("/voyager/orphanage", post(routers::post::orphanage))
         .route("/voyager", put(routers::put::put))
@@ -385,12 +462,12 @@ impl Backend {
         let input = read("voyager/webui.db");
         input.map_or_else(
             |_| {
-                info!("Existing Web UI not found!");
+                info!("Existing Web UI user not found! One will be created...");
                 Self::new()
             },
-            |webui| {
-                info!("Existing Web UI user found!");
-                Ok(Self::from(&webui).expect("valid webui file"))
+            |bytes| {
+                info!("Existing Web UI user found.");
+                Ok(Self::from(&bytes))
             },
         )
     }
@@ -410,17 +487,14 @@ impl Backend {
         }
     }
 
-    /// Attempts to deserialize a Web UI user
-    /// from bytes.
+    /// Attempts to deserialize a Web UI user from bytes.
     ///
-    /// # Errors
-    /// This function will return an error if
-    /// deserializing it fails. Most likely, some
-    /// data structure had a breaking change (or
-    /// the file is corrupted).
-    fn from(webui: &[u8]) -> Result<Self> {
-        let webui = bincode::deserialize(webui)?;
-        Ok(webui)
+    /// # Panics
+    /// This function will return an error if deserializing
+    /// it fails. Most likely, some data structure had a
+    /// breaking change (or the file is corrupted).
+    fn from(webui: &[u8]) -> Self {
+        bincode::deserialize(webui).expect("valid web ui user")
     }
 
     /// Asks for a username and password on the CLI.
