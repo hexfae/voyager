@@ -114,7 +114,7 @@ pub struct Validated;
 ///
 /// See [`Data`] for details.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
-#[display(fmt = "{data}")]
+#[display("{data}")]
 pub struct Level<State = Unvalidated> {
     /// A level's (possibly invalid) data.
     ///
