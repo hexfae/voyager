@@ -8,13 +8,13 @@ use axum::{
 use std::net::SocketAddr;
 use tracing::{debug, info};
 
+// for documentation
+#[allow(unused_imports)]
+use crate::utils::level::Data;
+
 /// Updates an already uploaded level in the database.
 ///
-/// Takes in a level in Void Stranger Level (VSL) format and a
-/// [ULID](https://github.com/ulid/spec) key.
-/// The format is as follows:
-///
-/// `version|name|description|music|author|brand|burdens|tiles|objects|key`
+/// See [`Data`] for details on level format.
 ///
 /// Returns 201 CREATED if successful. Returns 400 BAD REQUEST on invalid
 /// level data. Returns 401 UNAUTHORIZED on invalid key. Returns 404 NOT
@@ -35,12 +35,11 @@ pub async fn put(
     // TODO: improve
     let level = Level::new_from_put(&input, addr)?;
     let key = level.key;
-    let config = db.config();
-    let mut parsed = level.into_parsed(config)?;
+    let mut parsed = level.into_parsed(&db.config.read())?;
 
     let old_level = db.get(&key)?;
     parsed.set_dates_to_now();
-    parsed.set_uploaded_from(old_level, config)?;
+    parsed.set_uploaded_from(old_level, &db.config.read())?;
     let level = parsed.into_level();
     db.insert(level);
     info!("PUT success by {addr}.");

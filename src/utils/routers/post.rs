@@ -8,13 +8,17 @@ use axum::{
 use std::net::SocketAddr;
 use tracing::info;
 
+// for documentation
+#[allow(unused_imports)]
+use crate::utils::level::Data;
+
 /// Stages a level for uploading (if valid) and returns
 /// its key. An anti-orphan check [`orphanage`] is necessary.
 ///
 /// See [`Data`] for details on level format.
 ///
-/// Returns 201 CREATED and a ULID key if successful. Returns 400 BAD REQUEST if
-/// the level was invalid.
+/// Returns 201 CREATED and a [ULID](https://github.com/ulid/spec)
+/// key if successful. Returns 400 BAD REQUEST if the level was invalid.
 pub async fn post(
     State(db): State<SharedAppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -27,7 +31,7 @@ pub async fn post(
     }
 
     let level = Level::new(level, addr);
-    let mut parsed = level.into_parsed(db.config())?;
+    let mut parsed = level.into_parsed(&db.config.read())?;
     parsed.set_dates_to_now();
     info!("POST completed:\n{parsed}");
 

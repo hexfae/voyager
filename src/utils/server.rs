@@ -15,6 +15,7 @@ use axum_login::{
 };
 use dashmap::{DashMap, DashSet};
 use inquire::{min_length, Password, Text};
+use parking_lot::RwLock;
 use password_auth::{generate_hash, verify_password};
 use ron::ser::PrettyConfig;
 use serde::{Deserialize, Serialize};
@@ -33,7 +34,7 @@ use tracing::{info, warn};
 
 // for documentation
 #[allow(unused_imports)]
-use crate::utils::routers::post::orphanage;
+use crate::utils::{level::Data, routers::post::orphanage};
 
 /// Thread-safe app state, used across Voyager.
 pub type SharedAppState = Arc<AppState>;
@@ -44,7 +45,7 @@ pub struct AppState {
     /// Voyager's data (levels, orphans, banned IPs).
     data: VoyagerData,
     /// Voyager's configuration options.
-    config: VoyagerConfig,
+    pub config: RwLock<VoyagerConfig>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -105,6 +106,58 @@ impl VoyagerConfig {
             Err(why) => warn!("config could not be serialized: {why}"),
         };
     }
+
+    /// Attempts to load a Voyager config from `voyager/config.ron`.
+    ///
+    /// If it fails (likely due to it not yet existing), it
+    /// instead creates a new one using `Self::default()`,
+    /// which will use a set of at-the-time correct defaults.
+    ///
+    /// # Panics
+    /// Panics if a Voyager config is found, but deserializing
+    /// it fails. Most likely, some data structure had a
+    /// breaking change (or the file is corrupted).
+    pub fn load() -> RwLock<Self> {
+        read_to_string("voyager/config.ron").map_or_else(
+            |_| {
+                info!("Existing config not found! One will be created...");
+                let config = Self::default();
+                config.save();
+                RwLock::new(config)
+            },
+            |string| {
+                info!("Existing config found.");
+                ron::from_str(&string).expect("valid config file")
+            },
+        )
+    }
+
+    /// Attempts to load a Voyager config from `voyager/config.ron`.
+    ///
+    /// This function is used for hot-reloading the config
+    /// while Voyager is running.
+    ///
+    /// If it fails (likely due to the configuration being
+    /// changed to something invalid), it logs it and keeps
+    /// running without switching to the new config.
+    pub fn try_load() -> Option<Self> {
+        read_to_string("voyager/config.ron").map_or_else(
+            |why| {
+                warn!("could not read config to hot-reload: {why}");
+                None
+            },
+            |string| match ron::from_str(&string) {
+                Err(why) => {
+                    warn!("could not hot-reload config: {why}");
+                    None
+                }
+                Ok(config) => {
+                    info!("Hot-reloaded config.");
+                    Some(config)
+                }
+            },
+        )
+    }
 }
 
 impl Default for VoyagerConfig {
@@ -148,7 +201,7 @@ impl AppState {
     /// data structure had a breaking change (or
     /// the file is corrupted).
     #[must_use]
-    fn load() -> SharedAppState {
+    pub fn load() -> SharedAppState {
         let data = read("voyager/levels.db").map_or_else(
             |_| {
                 info!("Existing database not found! One will be created...");
@@ -160,18 +213,7 @@ impl AppState {
             },
         );
 
-        let config = read_to_string("voyager/config.ron").map_or_else(
-            |_| {
-                info!("Existing config not found! One will be created...");
-                VoyagerConfig::default()
-            },
-            |string| {
-                info!("Existing config found.");
-                ron::from_str(&string).expect("valid config file")
-            },
-        );
-
-        config.save();
+        let config = VoyagerConfig::load();
 
         Arc::new(Self { data, config })
     }
@@ -206,6 +248,15 @@ impl AppState {
             Err(why) => {
                 warn!("database could not be serialized: {why}");
             }
+        }
+    }
+
+    /// Attempts to hot-reload the config.
+    ///
+    /// See [`VoyagerConfig::try_load()`] for details.
+    pub fn reload_config(&self) {
+        if let Some(config) = VoyagerConfig::try_load() {
+            *self.config.write() = config;
         }
     }
 
@@ -308,13 +359,8 @@ impl AppState {
             .into_read_only()
             .values()
             .cloned()
-            .filter_map(|level| level.into_parsed(self.config()).ok())
+            .filter_map(|level| level.into_parsed(&self.config.read()).ok())
             .collect::<Vec<Parsed>>()
-    }
-
-    /// Returns a reference to the Voyager config.
-    pub const fn config(&self) -> &VoyagerConfig {
-        &self.config
     }
 }
 
@@ -322,9 +368,11 @@ impl AppState {
 ///
 /// # Errors
 /// Returns an error if the app could not be served.
-pub async fn start_voyager() -> Result<()> {
+pub async fn start_voyager(app_state: SharedAppState) -> Result<()> {
     info!("Voyager is now listening on port 3000.");
-    let router = create_router()?;
+    let _ = create_dir_all("voyager/backups");
+    tokio::spawn(backup_state_daily(app_state.clone()));
+    let router = create_router(app_state)?;
     serve_app(router).await
 }
 
@@ -340,12 +388,7 @@ async fn backup_state_daily(app_state: SharedAppState) {
 }
 
 /// Creates a new [`Router`] for Voyager.
-fn create_router() -> Result<Router> {
-    let _ = create_dir_all("voyager/backups");
-    let levels = AppState::load();
-
-    tokio::spawn(backup_state_daily(levels.clone()));
-
+fn create_router(app_state: SharedAppState) -> Result<Router> {
     let session_store = MemoryStore::default();
     let session_layer = SessionManagerLayer::new(session_store).with_secure(false);
 
@@ -369,7 +412,7 @@ fn create_router() -> Result<Router> {
         .route("/voyager", put(routers::put::put))
         .route("/voyager", delete(routers::delete::delete))
         .route("/voyager", any(routers::teapot::teapot))
-        .with_state(levels)
+        .with_state(app_state)
         .layer(TimeoutLayer::new(Duration::from_secs(10)))
         .layer(auth_layer))
 }

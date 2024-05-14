@@ -19,9 +19,39 @@ async fn main() -> prelude::Result<()> {
     // is dropped (at the end of this scope)
     let _guard = start_logging();
     tracing::info!("Voyager is launching.");
-    utils::server::start_voyager().await
+    let app_state = utils::server::AppState::load();
+    let cloned_app_state = app_state.clone();
+
+    // all of this ugliness has to go in main because, if put in a
+    // function, the watcher will get dropped too early (at the end
+    // of the function) and not actually watch the config (i think)
+    let mut debouncer = new_debouncer(
+        Duration::from_secs_f64(0.1),
+        move |res: DebounceEventResult| match res {
+            Ok(events) => {
+                for event in events {
+                    if event.kind == DebouncedEventKind::Any
+                        && event.path.ends_with("voyager/config.ron")
+                    {
+                        cloned_app_state.reload_config();
+                    }
+                }
+            }
+            Err(e) => tracing::warn!("watch error: {e:?}"),
+        },
+    )?;
+
+    debouncer.watcher().watch(
+        std::path::Path::new("voyager"),
+        notify_debouncer_mini::notify::RecursiveMode::NonRecursive,
+    )?;
+
+    utils::server::start_voyager(app_state).await
 }
 
+use std::time::Duration;
+
+use notify_debouncer_mini::{new_debouncer, DebounceEventResult, DebouncedEventKind};
 use tracing::level_filters::LevelFilter;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, Layer};

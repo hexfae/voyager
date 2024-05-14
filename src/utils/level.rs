@@ -1,5 +1,5 @@
-//! Contains the `Level` and `ParsedLevel` structs, related
-//! constants, and related wrapper types for `ParsedLevel`.
+//! Contains the [`Level`] struct, its [`Unvalidated`]
+//! and [`Validated`] states, and related constants.
 
 use crate::prelude::*;
 use base64::{prelude::BASE64_STANDARD, Engine};
@@ -76,7 +76,7 @@ pub struct Unvalidated;
 ///
 /// A validated level has a few guarantees: It has a valid version format.
 /// Name, description, and author are all valid strings and lengths.
-/// Music is one of eleven [`VALID_MUSIC`]. Brand and burdens are valid
+/// Music is one of the configured allowed songs. Brand and burdens are valid
 /// 36-bit and 4-bit numbers, respectively. It has an upload and last edit
 /// date in `yyyymmdd` format.
 ///
@@ -106,9 +106,9 @@ pub struct Level<State = Unvalidated> {
     state: PhantomData<State>,
 }
 
-/// The level format version.
+/// The latest level format version.
 ///
-/// Currently, this is only 1.
+/// At the time of writing (2024-05-14), this is 2.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Version(u8);
 
@@ -128,8 +128,8 @@ pub struct Description(String);
 
 /// The level's choice of music.
 ///
-/// Encoded as standard
-/// Base64, it must be one of [`VALID_MUSIC`].
+/// Encoded as standard Base64, it must be one of the
+/// configured allowed songs from [`VoyagerConfig`].
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Music(String);
 
@@ -147,7 +147,7 @@ pub struct Author(String);
 /// encoded as 36 bits, and is therefore stored as a u64 in
 /// Voyager and sent to/from Endless Void as a base-10 integer.
 ///
-/// See `BRAND_36_BITS` for the biggest brand possible.
+/// See [`BRAND_36_BITS`] for the biggest brand possible.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Brand(u64);
 
@@ -172,7 +172,7 @@ pub struct Edited(String);
 /// is therefore stored as a u8 in Voyager and sent to/from
 /// Endless Void as a base-10 integer.
 ///
-/// See `BURDENS_4_BITS` for the biggest value possible.
+/// See `[BURDENS_4_BITS]` for the biggest value possible.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Burdens(u8);
 
@@ -226,7 +226,7 @@ pub struct Parsed {
     pub objects: Objects,
     /// See [`Key`].
     pub key: Key,
-    /// See [`Uploader`].
+    /// The IP address of the uploader.
     pub uploader: IpAddr,
 }
 

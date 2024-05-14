@@ -96,7 +96,7 @@ pub enum Error {
     /// The user has been banned.
     ///
     /// The user was manually banned through the Web UI
-    /// and is no longer allowed to upload or edit levels.
+    /// and is no longer allowed to upload levels.
     #[error("you have been banned")]
     Banned,
     /// The given IP adress to ban by use of the Web UI was invalid.
@@ -110,10 +110,14 @@ pub enum Error {
     /// Most likely, another application is using it.
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
-    /// On startup, an error occured when asking for a username
+    /// On startup, an error occurred when asking for a username
     /// and password for the Web UI (probably a user interrupt).
     #[error("inquire error: {0}")]
     Inquire(#[from] inquire::InquireError),
+    /// On startup, an error occurred when setting up
+    /// a file watcher for hot-reloading the config.
+    #[error("config watch error: {0}")]
+    Watch(#[from] notify_debouncer_mini::notify::Error),
 }
 
 /// All number-related Voyager errors.
