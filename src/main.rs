@@ -18,13 +18,14 @@ async fn main() -> prelude::Result<()> {
     // it will also saves the logs to a file when the guard
     // is dropped (at the end of this scope)
     let _guard = start_logging();
+
     tracing::info!("Voyager is launching.");
-    let app_state = utils::server::AppState::load();
-    let cloned_app_state = app_state.clone();
+    let app_state = utils::server::AppState::load()?;
 
     // all of this ugliness has to go in main because, if put in a
     // function, the watcher will get dropped too early (at the end
     // of the function) and not actually watch the config (i think)
+    let cloned_app_state = app_state.clone();
     let mut debouncer = new_debouncer(
         Duration::from_secs_f64(0.1),
         move |res: DebounceEventResult| match res {

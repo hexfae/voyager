@@ -20,7 +20,11 @@ pub async fn get(
     State(db): State<SharedAppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> String {
-    info!("GET sent by {}", addr.ip());
+    info!(
+        "GET sent by {}; sending {} levels",
+        addr.ip(),
+        db.levels_len()
+    );
     db.levels()
 }
 

@@ -118,6 +118,10 @@ pub enum Error {
     /// a file watcher for hot-reloading the config.
     #[error("config watch error: {0}")]
     Watch(#[from] notify_debouncer_mini::notify::Error),
+    #[error("bincode (de)serialization error: {0}")]
+    Bincode(#[from] bincode::Error),
+    #[error("ron deserialization error: {0}")]
+    Ron(#[from] ron::de::SpannedError),
 }
 
 /// All number-related Voyager errors.

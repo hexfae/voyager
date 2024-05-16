@@ -14,6 +14,7 @@ use axum_login::{
     AuthManagerLayerBuilder, AuthUser, AuthnBackend, UserId,
 };
 use dashmap::{DashMap, DashSet};
+use derive_more::Display;
 use inquire::{min_length, Password, Text};
 use parking_lot::RwLock;
 use password_auth::{generate_hash, verify_password};
@@ -30,7 +31,7 @@ use std::{
 use time::OffsetDateTime;
 use tokio::signal;
 use tower_http::timeout::TimeoutLayer;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 // for documentation
 #[allow(unused_imports)]
@@ -48,7 +49,8 @@ pub struct AppState {
     pub config: RwLock<VoyagerConfig>,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize, Display)]
+#[display("{} levels, {} orphans, {} banned IPs", levels.len(), orphans.len(), banned_ips.len())]
 struct VoyagerData {
     /// Every key and its matching uploaded, validated level.
     levels: DashMap<Key, Level<Validated>>,
@@ -59,23 +61,61 @@ struct VoyagerData {
 }
 
 impl VoyagerData {
+    /// Attempts to load a Voyager database from `voyager/levels.db`.
+    ///
+    /// If reading the file fails (likely due to it not yet existing),
+    /// it instead creates a new one using `Self::default()`, which
+    /// creates an empty database.
+    ///
+    /// # Errors
+    /// Returns an error if a Voyager database is found, but
+    /// deserializing it fails. Most likely, some data structure
+    /// had a breaking change (or the file is corrupted).
+    fn load() -> Result<Self> {
+        info!("Opening database...");
+        read("voyager/levels.db").map_or_else(
+            |_| {
+                info!("Existing database not found! One will be created...");
+                Ok(Self::default())
+            },
+            |bytes| {
+                info!("Database found. Deserializing...");
+                match bincode::deserialize(&bytes) {
+                    Err(why) => {
+                        error!("Database could not be deserialized! {why}");
+                        Err(why.into())
+                    }
+                    Ok(data) => {
+                        info!("Database deserialization succesful. {data}.");
+                        Ok(data)
+                    }
+                }
+            },
+        )
+    }
+
     /// Attempts to save itself to `voyager/levels.db`.
     ///
     /// If it fails (likely due to file permissions),
     /// it will log a warning and keep running.
+    // it is really not that complex
+    #[allow(clippy::cognitive_complexity)]
     pub fn save(&self) {
+        info!("Saving database...");
         match bincode::serialize(&self) {
             Ok(bytes) => {
-                if let Err(why) = write("voyager/levels.db", bytes) {
-                    warn!("database could not be saved: {why}");
+                match write("voyager/levels.db", bytes) {
+                    Ok(()) => info!("Database saved."),
+                    Err(why) => warn!("Database could not be saved! {why}"),
                 };
             }
-            Err(why) => warn!("database could not be serialized: {why}"),
+            Err(why) => warn!("Database could not be serialized! {why}"),
         };
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Display)]
+#[display("{} allowed songs, format version {}, Endless Void version {}", allowed_songs.len(), format_version, endless_void_version)]
 pub struct VoyagerConfig {
     /// All available music choices in Void Stranger.
     ///
@@ -96,14 +136,22 @@ impl VoyagerConfig {
     ///
     /// If it fails (likely due to file permissions),
     /// it will log a warning and keep running.
+    // this might get used in the future for
+    // changing the config in the web ui
+    #[allow(dead_code)]
+    // it is really not that complex
+    #[allow(clippy::cognitive_complexity)]
     pub fn save(&self) {
+        info!("Saving config...");
         match ron::ser::to_string_pretty(&self, PrettyConfig::default()) {
-            Ok(bytes) => {
-                if let Err(why) = write("voyager/config.ron", bytes) {
-                    warn!("config could not be saved: {why}");
+            Err(why) => warn!("Config could not be serialized! {why}"),
+            Ok(string) => {
+                let len = string.len();
+                match write("voyager/config.ron", string) {
+                    Ok(()) => info!("Config saved. {len} bytes."),
+                    Err(why) => warn!("Config could not be saved! {why}"),
                 };
             }
-            Err(why) => warn!("config could not be serialized: {why}"),
         };
     }
 
@@ -113,21 +161,29 @@ impl VoyagerConfig {
     /// instead creates a new one using `Self::default()`,
     /// which will use a set of at-the-time correct defaults.
     ///
-    /// # Panics
-    /// Panics if a Voyager config is found, but deserializing
-    /// it fails. Most likely, some data structure had a
-    /// breaking change (or the file is corrupted).
-    pub fn load() -> RwLock<Self> {
+    /// # Errors
+    /// Returns an error if a Voyager config is found, but
+    /// deserializing it fails. Most likely, some data structure
+    /// had a breaking change (or the file is corrupted).
+    pub fn load() -> Result<RwLock<Self>> {
+        info!("Opening config...");
         read_to_string("voyager/config.ron").map_or_else(
             |_| {
                 info!("Existing config not found! One will be created...");
-                let config = Self::default();
-                config.save();
-                RwLock::new(config)
+                Ok(RwLock::new(Self::default()))
             },
             |string| {
-                info!("Existing config found.");
-                ron::from_str(&string).expect("valid config file")
+                info!("Config found. Deserializing...");
+                match ron::from_str(&string) {
+                    Err(why) => {
+                        error!("Config could not be deserialized! {why}");
+                        Err(why.into())
+                    }
+                    Ok(data) => {
+                        info!("Config deserialization successful. {data}.");
+                        Ok(RwLock::new(data))
+                    }
+                }
             },
         )
     }
@@ -141,18 +197,19 @@ impl VoyagerConfig {
     /// changed to something invalid), it logs it and keeps
     /// running without switching to the new config.
     pub fn try_load() -> Option<Self> {
+        info!("Opening config...");
         read_to_string("voyager/config.ron").map_or_else(
             |why| {
-                warn!("could not read config to hot-reload: {why}");
+                warn!("Config could not be read! {why}");
                 None
             },
             |string| match ron::from_str(&string) {
                 Err(why) => {
-                    warn!("could not hot-reload config: {why}");
+                    warn!("Config could not be hot-reloaded! {why}");
                     None
                 }
                 Ok(config) => {
-                    info!("Hot-reloaded config.");
+                    info!("Config hot-reload succesful.");
                     Some(config)
                 }
             },
@@ -200,22 +257,11 @@ impl AppState {
     /// deserializing it fails. Most likely, some
     /// data structure had a breaking change (or
     /// the file is corrupted).
-    #[must_use]
-    pub fn load() -> SharedAppState {
-        let data = read("voyager/levels.db").map_or_else(
-            |_| {
-                info!("Existing database not found! One will be created...");
-                VoyagerData::default()
-            },
-            |bytes| {
-                info!("Existing database found.");
-                bincode::deserialize(&bytes).expect("valid database file")
-            },
-        );
+    pub fn load() -> Result<SharedAppState> {
+        let data = VoyagerData::load()?;
+        let config = VoyagerConfig::load()?;
 
-        let config = VoyagerConfig::load();
-
-        Arc::new(Self { data, config })
+        Ok(Arc::new(Self { data, config }))
     }
 
     /// Attempts to save itself to `voyager/levels.db`.
@@ -242,7 +288,7 @@ impl AppState {
                 if let Err(why) = write(path, bytes) {
                     warn!("database could not be saved: {why}");
                 } else {
-                    info!("Backup saved: {len} bytes");
+                    info!("Backup saved: {len} bytes.");
                 }
             }
             Err(why) => {
@@ -331,6 +377,10 @@ impl AppState {
         }
         self.save();
         Ok(())
+    }
+
+    pub fn levels_len(&self) -> usize {
+        self.data.levels.len()
     }
 
     /// Returns a comma-separated list of all stored levels
