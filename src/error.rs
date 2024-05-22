@@ -6,8 +6,7 @@
 // for documentation
 #[allow(unused_imports)]
 use crate::utils::level::{
-    BLACK_HOLE_FORMAT, BRAND_36_BITS, BURDENS_4_BITS, MAX_AUTHOR_LEN, MAX_DESCRIPTION_LEN,
-    MAX_NAME_LEN,
+    BRAND_36_BITS, BURDENS_4_BITS, MAX_AUTHOR_LEN, MAX_DESCRIPTION_LEN, MAX_NAME_LEN,
 };
 
 /// The main error type, containing all possible fail-states of Voyager.
@@ -69,12 +68,12 @@ pub enum Error {
     InvalidBurdens(NumberError),
     /// POST and PUT: The level tiles were invalid.
     ///
-    /// One or more characters was not found in ([`BLACK_HOLE_FORMAT`]).
+    /// One or more character was not in the list of allowed characters.
     #[error("invalid tiles")]
     InvalidTiles,
     /// POST and PUT: The level objects were invalid.
     ///
-    /// One or more characters were not in ([`BLACK_HOLE_FORMAT`]).
+    /// One or more character was not in the list of allowed characters.
     #[error("invalid objects")]
     InvalidObjects,
     /// PUT and DELETE: The key was invalid.
@@ -119,7 +118,15 @@ pub enum Error {
     #[error("config watch error: {0}")]
     Watch(#[from] notify_debouncer_mini::notify::Error),
     #[error("bincode (de)serialization error: {0}")]
+    /// On startup, the level database could not be serialized.
+    ///
+    /// Most likely, a breaking change has happened (please
+    /// report it!), or the file is corrupted.
     Bincode(#[from] bincode::Error),
+    /// On startup, the config could not be serialized.
+    ///
+    /// Most likely, a breaking change has happened (please
+    /// report it!), or the file is corrupted.
     #[error("ron deserialization error: {0}")]
     Ron(#[from] ron::de::SpannedError),
 }

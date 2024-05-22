@@ -121,6 +121,12 @@ pub struct VoyagerConfig {
     ///
     /// Note: An empty string (`""`) is allowed and means ambience.
     pub allowed_songs: Vec<String>,
+    /// All possible characters from Endless Void's black hole format.
+    ///
+    /// Currently, there is no (easy) way to check if a level is valid.
+    /// Therefore, this is the best (easiest) way to check a level's validity.
+    #[serde(default = "default_allowed_characters")]
+    pub allowed_characters: String,
     /// The current highest format version used by Endless Void.
     ///
     /// At the time of writing (2024-05-14), this is `2`.
@@ -131,14 +137,17 @@ pub struct VoyagerConfig {
     pub endless_void_version: String,
 }
 
+// this function is just needed as a default for allowed_characters of VoyagerConfig
+fn default_allowed_characters() -> String {
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=!<>-[]?".into()
+}
+
+
 impl VoyagerConfig {
     /// Attempts to save itself to `voyager/config.ron`.
     ///
     /// If it fails (likely due to file permissions),
     /// it will log a warning and keep running.
-    // this might get used in the future for
-    // changing the config in the web ui
-    #[allow(dead_code)]
     // it is really not that complex
     #[allow(clippy::cognitive_complexity)]
     pub fn save(&self) {
@@ -170,18 +179,25 @@ impl VoyagerConfig {
         read_to_string("voyager/config.ron").map_or_else(
             |_| {
                 info!("Existing config not found! One will be created...");
-                Ok(RwLock::new(Self::default()))
+                let config = Self::default();
+                config.save();
+                Ok(RwLock::new(config))
             },
             |string| {
                 info!("Config found. Deserializing...");
-                match ron::from_str(&string) {
+                match ron::from_str::<Self>(&string) {
                     Err(why) => {
                         error!("Config could not be deserialized! {why}");
                         Err(why.into())
                     }
-                    Ok(data) => {
-                        info!("Config deserialization successful. {data}.");
-                        Ok(RwLock::new(data))
+                    Ok(config) => {
+                        info!("Config deserialization successful. {config}.");
+                        // save immediately because
+                        // allowed_characters might
+                        // have been just created
+                        // from #[serde(default)]
+                        config.save();
+                        Ok(RwLock::new(config))
                     }
                 }
             },
@@ -217,6 +233,8 @@ impl VoyagerConfig {
     }
 }
 
+
+
 impl Default for VoyagerConfig {
     fn default() -> Self {
         Self {
@@ -240,6 +258,12 @@ impl Default for VoyagerConfig {
                 "msc_rytmi2".into(),
                 "msc_test2".into(),
             ],
+            allowed_characters: 
+            // base64
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=!
+            <>-[]?" // brainfuck (actually includes + but that's already in base64)
+        .into(),
+
             format_version: 2,
             endless_void_version: "0.875".into(),
         }
@@ -379,6 +403,7 @@ impl AppState {
         Ok(())
     }
 
+    /// Returns the amount of levels in the database.
     pub fn levels_len(&self) -> usize {
         self.data.levels.len()
     }

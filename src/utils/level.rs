@@ -29,13 +29,6 @@ pub const BRAND_36_BITS: u64 = 0b1111_1111_1111_1111_1111_1111_1111_1111_1111;
 /// Equal to 2^4-1 or 15.
 pub const BURDENS_4_BITS: u8 = 0b1111;
 
-/// All possible characters from Endless Void's black hole format.
-///
-/// Currently, there is no (easy) way to check if a level is valid.
-/// Therefore, this is the best (easiest) way to check a level's validity.
-pub const BLACK_HOLE_FORMAT: &str =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=!";
-
 /// A level's data, as sent to Endless Void.
 ///
 /// The format is as follows:
@@ -298,8 +291,8 @@ impl<State> Level<State> {
         let uploaded = Uploaded(uploaded.to_string());
         let edited = Edited(edited.to_string());
         let burdens = Burdens::try_from(burdens)?;
-        let tiles = Tiles::try_from(tiles)?;
-        let objects = Objects::try_from(objects)?;
+        let tiles = Tiles::try_from(tiles, config)?;
+        let objects = Objects::try_from(objects, config)?;
         let key = self.key;
         let ip = self.uploader;
 
@@ -533,24 +526,38 @@ impl TryFrom<&str> for Burdens {
     }
 }
 
-impl TryFrom<&str> for Tiles {
-    type Error = Error;
-
-    fn try_from(input: &str) -> std::prelude::v1::Result<Self, Self::Error> {
+impl Tiles {
+    /// Parses input as tiles from Void Stranger.
+    ///
+    /// # Errors
+    /// Returns an error if any character was not found
+    /// in the config list of allowed characters.
+    fn try_from(input: &str, config: &VoyagerConfig) -> Result<Self> {
         // TODO: is there some way to actually validate level data?
         // if any character is not in the list of allowed characters
-        if input.chars().any(|char| !BLACK_HOLE_FORMAT.contains(char)) {
+        if input
+            .chars()
+            .any(|char| !config.allowed_characters.contains(char))
+        {
             return Err(Error::InvalidTiles);
         }
         Ok(Self(input.to_string()))
     }
 }
 
-impl TryFrom<&str> for Objects {
-    type Error = Error;
-
-    fn try_from(input: &str) -> std::prelude::v1::Result<Self, Self::Error> {
-        if input.chars().any(|char| !BLACK_HOLE_FORMAT.contains(char)) {
+impl Objects {
+    /// Parses input as objects from Void Stranger.
+    ///
+    /// # Errors
+    /// Returns an error if any character was not found
+    /// in the config list of allowed characters.
+    fn try_from(input: &str, config: &VoyagerConfig) -> Result<Self> {
+        // TODO: is there some way to actually validate level data?
+        // if any character is not in the list of allowed characters
+        if input
+            .chars()
+            .any(|char| !config.allowed_characters.contains(char))
+        {
             return Err(Error::InvalidObjects);
         }
         Ok(Self(input.to_string()))
