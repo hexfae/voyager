@@ -27,8 +27,13 @@ Voyager is a server/database for [Endless Void](https://github.com/Skirlez/void-
 
 A Web UI is available at `/voyager/webui`. The Web UI may be used for administrative tasks, such as deleting naughty levels. Actual level uploading, editing, and browsing is done by clients through [Endless Void](https://github.com/Skirlez/void-stranger-endless-void).
 
+## Contributing
+
+Please contribute
+
 ## To-do list
 
 - [ ] Level packs.
 - [ ] Comprehensive logging.
+- [ ] Even better documentation.
 - [ ] Testing?
