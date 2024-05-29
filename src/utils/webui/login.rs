@@ -2,37 +2,21 @@
 
 use crate::prelude::*;
 
+use askama_axum::Template;
 use axum::{
     http::StatusCode,
-    response::{Html, IntoResponse, Redirect},
+    response::{IntoResponse, Redirect},
     Form,
 };
 
+#[derive(Template)]
+#[template(path = "login.html")]
+/// Askama template for rendering the login page.
+struct LoginPage;
+
 /// The login page.
-pub async fn get() -> Html<&'static str> {
-    Html(
-        r#"
-        <!doctype html>
-        <html>
-            <head></head>
-            <body>
-                <form action="/voyager/webui/login" method="post">
-                    <label for="username">
-                        username:
-                        <input type="text" name="username">
-                    </label>
-
-                    <label>
-                        password:
-                        <input type="password" name="password">
-                    </label>
-
-                    <input type="submit" value="submit">
-                </form>
-            </body>
-        </html>
-        "#,
-    )
+pub async fn get() -> impl IntoResponse {
+    LoginPage
 }
 
 /// The function responsible for authenticating a login.
