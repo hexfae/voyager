@@ -122,6 +122,11 @@
       border-top: 1px #6c6c6c solid;
     }
 
+    td>img {
+      image-rendering: pixelated;
+      width: 100%;
+    }
+
     th,
     td {
       padding: 0.25rem 0.5rem;
@@ -186,7 +191,7 @@
         <td>{{ level.description }}</td>
         <td>{{ level.music }}</td>
         <td>{{ level.author }}</td>
-        <td>{{ level.brand }}</td>
+        <td><img title="{{ level.brand }}" src="data:image/png;base64,{{ level.brand_image }}"></td>
         <td>{{ level.uploaded }}</td>
         <td>{{ level.edited }}</td>
         <td>{{ level.burdens }}</td>

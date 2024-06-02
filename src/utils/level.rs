@@ -3,11 +3,15 @@
 
 use crate::prelude::*;
 use base64::{prelude::BASE64_STANDARD, Engine};
+use bitvec::order::Lsb0;
+use bitvec::view::BitView;
 use derive_more::Display;
+use image::{ImageBuffer, ImageFormat, Rgb};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use std::{marker::PhantomData, net::IpAddr, str::FromStr};
+use std::{io::Cursor, marker::PhantomData, net::IpAddr, str::FromStr};
 use time::OffsetDateTime;
+use tracing::warn;
 use ulid::Ulid;
 
 /// A level's name's max length.
@@ -221,6 +225,91 @@ pub struct Parsed {
     pub key: Key,
     /// The IP address of the uploader.
     pub uploader: IpAddr,
+}
+
+#[allow(clippy::doc_markdown)]
+/// A level's representation in the WebUI.
+// todo: documentation
+#[allow(clippy::module_name_repetitions)]
+pub struct IndexLevel {
+    /// See [`Version`].
+    pub version: Version,
+    /// See [`Name`].
+    pub name: Name,
+    /// See [`Description`].
+    pub description: Description,
+    /// See [`Music`].
+    pub music: Music,
+    /// See [`Author`].
+    pub author: Author,
+    /// See [`Brand`].
+    pub brand: Brand,
+    /// See [`BrandImage`].
+    pub brand_image: BrandImage,
+    /// See [`Uploaded`].
+    pub uploaded: Uploaded,
+    /// See [`Edited`].
+    pub edited: Edited,
+    /// See [`Burdens`].
+    pub burdens: Burdens,
+    /// See [`Key`].
+    pub key: Key,
+    /// The IP address of the uploader.
+    pub uploader: IpAddr,
+}
+
+/// Base64-encoded 6x6 PNG of the level author's brand.
+#[derive(Debug, Display, Clone, Serialize, Deserialize)]
+pub struct BrandImage(String);
+
+#[allow(clippy::doc_markdown)]
+/// A level's representation in the WebUI.
+impl IndexLevel {
+    /// Creates a new [`IndexLevel`] from a parsed level.
+    pub fn new(input: Parsed) -> Self {
+        let brand_image = BrandImage::new(&input.brand);
+        Self {
+            version: input.version,
+            name: input.name,
+            description: input.description,
+            music: input.music,
+            author: input.author,
+            brand: input.brand,
+            brand_image,
+            uploaded: input.uploaded,
+            edited: input.edited,
+            burdens: input.burdens,
+            key: input.key,
+            uploader: input.uploader,
+        }
+    }
+}
+
+impl BrandImage {
+    /// Creates a new [`BrandImage`] from a [`Brand`].
+    ///
+    /// The brand is encoded as a 6x6 PNG image
+    /// of black and white pixels in Base64 format.
+    pub fn new(input: &Brand) -> Self {
+        let width = 6;
+        let height = 6;
+        let mut img = ImageBuffer::<Rgb<u8>, _>::new(width, height);
+        let bits = input.0.view_bits::<Lsb0>();
+        for (x, y, pixel) in img.enumerate_pixels_mut() {
+            let pixel_is_black = bits[(x + y * height) as usize];
+            *pixel = if pixel_is_black {
+                Rgb([255, 255, 255])
+            } else {
+                Rgb([0, 0, 0])
+            };
+        }
+        let mut buf = Cursor::new(Vec::new());
+        if let Err(why) = img.write_to(&mut buf, ImageFormat::Png) {
+            warn!("something went wrong while writing image to buffer! {why}");
+        };
+        let png = BASE64_STANDARD.encode(buf.into_inner());
+        Self(png)
+    }
 }
 
 impl Level<Unvalidated> {

@@ -1,7 +1,7 @@
 //! Contains [`AppState`], related methods, and
 //! various Axum server-related functions.
 use crate::prelude::*;
-use crate::utils::{level::Validated, routers, webui};
+use crate::utils::{level::{Validated, IndexLevel}, routers, webui};
 use axum::{
     async_trait,
     http::StatusCode,
@@ -427,7 +427,7 @@ impl AppState {
     // TODO: this function is a whole mess!
     #[must_use]
     /// Parses and returns all stored levels.
-    pub fn parsed_levels(&self) -> Vec<Parsed> {
+    pub fn index_levels(&self) -> Vec<IndexLevel> {
         self.data
             .levels
             .clone()
@@ -435,7 +435,8 @@ impl AppState {
             .values()
             .cloned()
             .filter_map(|level| level.into_parsed(&self.config.read()).ok())
-            .collect::<Vec<Parsed>>()
+            .map(IndexLevel::new)
+            .collect()
     }
 }
 
