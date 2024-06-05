@@ -236,10 +236,6 @@ impl VoyagerConfig {
                     }
                     Ok(config) => {
                         info!("Config loaded: {config}.");
-                        // save immediately in case a new config
-                        // option has been added so that
-                        // #[serde(default)] can create it
-                        config.save();
                         Ok(config)
                     }
                 }

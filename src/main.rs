@@ -37,6 +37,9 @@ async fn main() -> Result<()> {
 
     info!("Voyager is loading...");
     let app_state = AppState::try_load()?;
+    // save immediately in case a new config option has
+    // been added so that #[serde(default)] can create it
+    app_state.config.read().save();
     let backend = Backend::try_load()?;
 
     // all of this ugliness has to go in main because, if put in a
