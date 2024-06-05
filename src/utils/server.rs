@@ -1,7 +1,10 @@
 //! Contains [`AppState`], related methods, and
 //! various Axum server-related functions.
 use crate::prelude::*;
-use crate::utils::{level::{Validated, IndexLevel}, routers, webui};
+use crate::utils::{
+    level::{IndexLevel, Validated},
+    routers, webui,
+};
 use axum::{
     async_trait,
     http::StatusCode,
@@ -20,7 +23,7 @@ use parking_lot::RwLock;
 use password_auth::{generate_hash, verify_password};
 use ron::ser::PrettyConfig;
 use serde::{Deserialize, Serialize};
-use std::fs::{create_dir_all, read_to_string};
+use std::fs::read_to_string;
 use std::net::IpAddr;
 use std::{
     fs::{read, write},
@@ -31,14 +34,57 @@ use std::{
 use time::OffsetDateTime;
 use tokio::signal;
 use tower_http::timeout::TimeoutLayer;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 // for documentation
 #[allow(unused_imports)]
-use crate::utils::{level::Data, routers::post::orphanage};
+use crate::utils::{level::Data, routers::post::orphanage, routers::version::version};
+#[allow(unused_imports)]
+use base64::prelude::BASE64_STANDARD;
 
-/// Thread-safe app state, used across Voyager.
-pub type SharedAppState = Arc<AppState>;
+/// List of default allowed songs.
+///
+/// An empty string (`""`) is allowed and means ambience.
+const DEFAULT_ALLOWED_SONGS: [&str; 18] = [
+    "", // ambience
+    "msc_001",
+    "msc_dungeon_wings",
+    "msc_beecircle",
+    "msc_dungeongroove",
+    "msc_013",
+    "msc_gorcircle_lo",
+    "msc_levcircle",
+    "msc_escapewithfriend",
+    "msc_cifcircle",
+    "msc_006",
+    "msc_beesong",
+    "msc_themeofcif",
+    "msc_monstrail",
+    "msc_endless",
+    "msc_stg_extraboss",
+    "msc_rytmi2",
+    "msc_test2",
+];
+
+/// The default set of characters that are allowed as objects and tiles.
+///
+/// The characters allowed are [`BASE64_STANDARD`] and the Brainfuck symbols `+/=!<>-[]?` .
+pub const DEFAULT_ALLOWED_CHARACTERS: &str =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=!<>-[]?";
+
+/// The default format version used by Voyager.
+///
+/// At the time of writing (2024-06-02), this is either `1` or `2`.
+///
+/// The only difference between these two versions is that version `2` allows Brainfuck symbols.
+const DEFAULT_FORMAT_VERSION: u8 = 2;
+
+/// The default latest version of Endless Void.
+///
+/// This is used to inform Endless Void users of new updates through [`version`].
+///
+/// As of 2024-06-02, this is `0.875`.
+const DEFAULT_ENDLESS_VOID_VERSION: &str = "0.875";
 
 /// Voyager's data and configuration.
 #[derive(Debug, Serialize, Deserialize)]
@@ -68,25 +114,23 @@ impl VoyagerData {
     /// creates an empty database.
     ///
     /// # Errors
-    /// Returns an error if a Voyager database is found, but
-    /// deserializing it fails. Most likely, some data structure
-    /// had a breaking change (or the file is corrupted).
-    fn load() -> Result<Self> {
-        info!("Opening database...");
+    /// - [`Error::Bincode`] if deserializing the file fails.
+    fn try_load() -> Result<Self> {
+        debug!("Database is opening...");
         read("voyager/levels.db").map_or_else(
             |_| {
-                info!("Existing database not found! One will be created...");
+                info!("Existing database not found! One will be created.");
                 Ok(Self::default())
             },
             |bytes| {
-                info!("Database found. Deserializing...");
+                debug!("Database opened. Database is loading...");
                 match bincode::deserialize(&bytes) {
                     Err(why) => {
-                        error!("Database could not be deserialized! {why}");
+                        error!("Database could not be loaded! {why}");
                         Err(why.into())
                     }
                     Ok(data) => {
-                        info!("Database deserialization succesful. {data}.");
+                        info!("Database loaded: {data}.");
                         Ok(data)
                     }
                 }
@@ -96,20 +140,21 @@ impl VoyagerData {
 
     /// Attempts to save itself to `voyager/levels.db`.
     ///
-    /// If it fails (likely due to file permissions),
-    /// it will log a warning and keep running.
+    /// If an error occurs, it will log a warning and keep running.
     // it is really not that complex
     #[allow(clippy::cognitive_complexity)]
     pub fn save(&self) {
-        info!("Saving database...");
+        debug!("Database is serializing...");
         match bincode::serialize(&self) {
+            Err(why) => warn!("Database could not be serialized! {why}"),
             Ok(bytes) => {
+                let len = bytes.len();
+                debug!("Database serialized. Database is saving...");
                 match write("voyager/levels.db", bytes) {
-                    Ok(()) => info!("Database saved."),
+                    Ok(()) => debug!("Database saved. {len} bytes."),
                     Err(why) => warn!("Database could not be saved! {why}"),
                 };
             }
-            Err(why) => warn!("Database could not be serialized! {why}"),
         };
     }
 }
@@ -119,7 +164,7 @@ impl VoyagerData {
 pub struct VoyagerConfig {
     /// All available music choices in Void Stranger.
     ///
-    /// Note: An empty string (`""`) is allowed and means ambience.
+    /// See [`DEFAULT_ALLOWED_SONGS`] for the default list.
     pub allowed_songs: Vec<String>,
     /// All possible characters from Endless Void's black hole format.
     ///
@@ -139,25 +184,24 @@ pub struct VoyagerConfig {
 
 // this function is just needed as a default for allowed_characters of VoyagerConfig
 fn default_allowed_characters() -> String {
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=!<>-[]?".into()
+    DEFAULT_ALLOWED_CHARACTERS.into()
 }
-
 
 impl VoyagerConfig {
     /// Attempts to save itself to `voyager/config.ron`.
     ///
-    /// If it fails (likely due to file permissions),
-    /// it will log a warning and keep running.
+    /// If an error occurs, it will log a warning and keep running.
     // it is really not that complex
     #[allow(clippy::cognitive_complexity)]
     pub fn save(&self) {
-        info!("Saving config...");
+        debug!("Config is serializing...");
         match ron::ser::to_string_pretty(&self, PrettyConfig::default()) {
             Err(why) => warn!("Config could not be serialized! {why}"),
             Ok(string) => {
+                debug!("Config serialized. Config is saving...");
                 let len = string.len();
                 match write("voyager/config.ron", string) {
-                    Ok(()) => info!("Config saved. {len} bytes."),
+                    Ok(()) => debug!("Config saved. {len} bytes."),
                     Err(why) => warn!("Config could not be saved! {why}"),
                 };
             }
@@ -174,98 +218,74 @@ impl VoyagerConfig {
     /// Returns an error if a Voyager config is found, but
     /// deserializing it fails. Most likely, some data structure
     /// had a breaking change (or the file is corrupted).
-    pub fn load() -> Result<RwLock<Self>> {
-        info!("Opening config...");
+    pub fn try_load() -> Result<Self> {
+        debug!("Config is opening...");
         read_to_string("voyager/config.ron").map_or_else(
             |_| {
-                info!("Existing config not found! One will be created...");
+                info!("Existing config not found! One will be created.");
                 let config = Self::default();
                 config.save();
-                Ok(RwLock::new(config))
+                Ok(config)
             },
             |string| {
-                info!("Config found. Deserializing...");
+                debug!("Config opened. Config is loading...");
                 match ron::from_str::<Self>(&string) {
                     Err(why) => {
-                        error!("Config could not be deserialized! {why}");
+                        error!("Config could not be loaded! {why}");
                         Err(why.into())
                     }
                     Ok(config) => {
-                        info!("Config deserialization successful. {config}.");
-                        // save immediately because
-                        // allowed_characters might
-                        // have been just created
-                        // from #[serde(default)]
+                        info!("Config loaded: {config}.");
+                        // save immediately in case a new config
+                        // option has been added so that
+                        // #[serde(default)] can create it
                         config.save();
-                        Ok(RwLock::new(config))
+                        Ok(config)
                     }
                 }
             },
         )
     }
 
-    /// Attempts to load a Voyager config from `voyager/config.ron`.
-    ///
-    /// This function is used for hot-reloading the config
-    /// while Voyager is running.
-    ///
-    /// If it fails (likely due to the configuration being
-    /// changed to something invalid), it logs it and keeps
-    /// running without switching to the new config.
-    pub fn try_load() -> Option<Self> {
-        info!("Opening config...");
-        read_to_string("voyager/config.ron").map_or_else(
-            |why| {
-                warn!("Config could not be read! {why}");
-                None
-            },
-            |string| match ron::from_str(&string) {
-                Err(why) => {
-                    warn!("Config could not be hot-reloaded! {why}");
-                    None
-                }
-                Ok(config) => {
-                    info!("Config hot-reload succesful.");
-                    Some(config)
-                }
-            },
-        )
-    }
+    // /// Attempts to load a Voyager config from `voyager/config.ron`.
+    // ///
+    // /// This function is used for hot reloading the config
+    // /// while Voyager is running.
+    // ///
+    // /// If it fails (likely due to the configuration being
+    // /// changed to something invalid), it logs it and keeps
+    // /// running without switching to the new config.
+    // pub fn try_load() -> Option<Self> {
+    //     debug!("Config is opening for hot reload...");
+    //     read_to_string("voyager/config.ron").map_or_else(
+    //         |why| {
+    //             warn!("Config could not be opened for hot reload! {why}");
+    //             None
+    //         },
+    //         |string| {
+    //             debug!("Config opened. Config is loading...");
+    //             match ron::from_str(&string) {
+    //                 Err(why) => {
+    //                     warn!("Config could not be loaded! {why}");
+    //                     None
+    //                 }
+    //                 Ok(config) => {
+    //                     info!("Config reloaded: {config}");
+    //                     Some(config)
+    //                 }
+    //             }
+    //         },
+    //     )
+    // }
 }
-
-
 
 impl Default for VoyagerConfig {
     fn default() -> Self {
         Self {
-            allowed_songs: vec![
-                String::new(), // "", ambience
-                "msc_001".into(),
-                "msc_dungeon_wings".into(),
-                "msc_beecircle".into(),
-                "msc_dungeongroove".into(),
-                "msc_013".into(),
-                "msc_gorcircle_lo".into(),
-                "msc_levcircle".into(),
-                "msc_escapewithfriend".into(),
-                "msc_cifcircle".into(),
-                "msc_006".into(),
-                "msc_beesong".into(),
-                "msc_themeofcif".into(),
-                "msc_monstrail".into(),
-                "msc_endless".into(),
-                "msc_stg_extraboss".into(),
-                "msc_rytmi2".into(),
-                "msc_test2".into(),
-            ],
-            allowed_characters: 
-            // base64
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=!
-            <>-[]?" // brainfuck (actually includes + but that's already in base64)
-        .into(),
-
-            format_version: 2,
-            endless_void_version: "0.875".into(),
+            allowed_songs: DEFAULT_ALLOWED_SONGS.map(ToString::to_string).to_vec(),
+            allowed_characters: DEFAULT_ALLOWED_CHARACTERS.into(),
+            format_version: DEFAULT_FORMAT_VERSION,
+            endless_void_version: DEFAULT_ENDLESS_VOID_VERSION.into(),
         }
     }
 }
@@ -281,9 +301,11 @@ impl AppState {
     /// deserializing it fails. Most likely, some
     /// data structure had a breaking change (or
     /// the file is corrupted).
-    pub fn load() -> Result<SharedAppState> {
-        let data = VoyagerData::load()?;
-        let config = VoyagerConfig::load()?;
+    pub fn try_load() -> Result<SharedAppState> {
+        debug!("App state is loading...");
+        let data = VoyagerData::try_load()?;
+        let config = RwLock::new(VoyagerConfig::try_load()?);
+        debug!("App state loaded.");
 
         Ok(Arc::new(Self { data, config }))
     }
@@ -299,33 +321,37 @@ impl AppState {
     /// Performs a backup to `voyager/backups/yyyy-mm-dd.db`.
     ///
     /// Used for daily backups.
+    // it is really not that complex
+    #[allow(clippy::cognitive_complexity)]
     fn backup(&self) {
         let now = OffsetDateTime::now_utc()
             // 2024-05-13
             .date()
             .to_string();
         let path = format!("voyager/backups/{now}.db");
+        debug!("Backup is being created at {path}...");
 
         match bincode::serialize(&self) {
+            Err(why) => {
+                warn!("Backup could not be created: {why}");
+            }
             Ok(bytes) => {
+                debug!("Backup created. Backup is saving...");
                 let len = bytes.len();
                 if let Err(why) = write(path, bytes) {
-                    warn!("database could not be saved: {why}");
+                    warn!("Backup could not be saved: {why}");
                 } else {
-                    info!("Backup saved: {len} bytes.");
+                    debug!("Backup saved: {len} bytes.");
                 }
-            }
-            Err(why) => {
-                warn!("database could not be serialized: {why}");
             }
         }
     }
 
-    /// Attempts to hot-reload the config.
+    /// Attempts to hot reload the config.
     ///
     /// See [`VoyagerConfig::try_load()`] for details.
     pub fn reload_config(&self) {
-        if let Some(config) = VoyagerConfig::try_load() {
+        if let Ok(config) = VoyagerConfig::try_load() {
             *self.config.write() = config;
         }
     }
@@ -444,11 +470,9 @@ impl AppState {
 ///
 /// # Errors
 /// Returns an error if the app could not be served.
-pub async fn start_voyager(app_state: SharedAppState) -> Result<()> {
-    info!("Voyager is now listening on port 3000.");
-    let _ = create_dir_all("voyager/backups");
+pub async fn start_voyager(app_state: SharedAppState, backend: Backend) -> Result<()> {
     tokio::spawn(backup_state_daily(app_state.clone()));
-    let router = create_router(app_state)?;
+    let router = create_router(app_state, backend);
     serve_app(router).await
 }
 
@@ -464,14 +488,13 @@ async fn backup_state_daily(app_state: SharedAppState) {
 }
 
 /// Creates a new [`Router`] for Voyager.
-fn create_router(app_state: SharedAppState) -> Result<Router> {
+fn create_router(app_state: SharedAppState, backend: Backend) -> Router {
     let session_store = MemoryStore::default();
     let session_layer = SessionManagerLayer::new(session_store).with_secure(false);
 
-    let backend = Backend::load()?;
     let auth_layer = AuthManagerLayerBuilder::new(backend, session_layer).build();
 
-    Ok(Router::new()
+    Router::new()
         .route("/voyager/webui", get(webui::index::index))
         .route_layer(login_required!(Backend, login_url = "/voyager/webui/login"))
         .route("/voyager/webui/delete/:key", post(webui::delete::delete))
@@ -490,12 +513,13 @@ fn create_router(app_state: SharedAppState) -> Result<Router> {
         .route("/voyager", any(routers::teapot::teapot))
         .with_state(app_state)
         .layer(TimeoutLayer::new(Duration::from_secs(10)))
-        .layer(auth_layer))
+        .layer(auth_layer)
 }
 
 /// Serves the Voyager app on port 3000.
 async fn serve_app(app: Router) -> Result<()> {
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
+    info!("Voyager started. Listening on port 3000...");
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
@@ -577,16 +601,39 @@ impl Backend {
     /// deserializing it fails. Most likely, some
     /// data structure had a breaking change (or
     /// the file is corrupted).
-    fn load() -> Result<Self> {
+    // it is really not that complex
+    #[allow(clippy::cognitive_complexity)]
+    pub fn try_load() -> Result<Self> {
+        debug!("Web UI user is opening...");
         let input = read("voyager/webui.db");
         input.map_or_else(
             |_| {
-                info!("Existing Web UI user not found! One will be created...");
+                info!("Existing Web UI user not found! Please create one...");
                 Self::new()
             },
             |bytes| {
-                info!("Existing Web UI user found.");
-                Ok(Self::from(&bytes))
+                debug!("Web UI user opened. Web UI user loading...");
+                let backend = Self::from(&bytes);
+                match backend {
+                    Err(why) => {
+                        error!("Web UI user could not be loaded! {why}");
+                        Err(why)
+                    }
+                    Ok(backend) => {
+                        // why does Values have a last() method but not a first() method?
+                        let user = backend.users.values().last().cloned();
+                        user.map_or_else(
+                            || {
+                                error!("Web UI user could not be found!");
+                                Err(Error::WebUI)
+                            },
+                            |user| {
+                                info!("Web UI user loaded: {}.", user.username);
+                                Ok(backend)
+                            },
+                        )
+                    }
+                }
             },
         )
     }
@@ -595,25 +642,31 @@ impl Backend {
     ///
     /// If it fails (likely due to file permissions),
     /// it will log a warning and keep running.
+    // it is really not that complex
+    #[allow(clippy::cognitive_complexity)]
     fn save(&self) {
+        debug!("Web UI user is serializing...");
         match bincode::serialize(&self) {
             Ok(bytes) => {
+                debug!("Web UI user serialized. Web UI is saving...");
                 if let Err(why) = write("voyager/webui.db", bytes) {
-                    warn!("webui could not be saved: {why}");
+                    warn!("Web UI user could not be saved: {why}");
+                } else {
+                    debug!("Web UI user saved.");
                 };
             }
-            Err(why) => warn!("webui could not be serialized: {why}"),
+            Err(why) => warn!("Web UI could not be serialized: {why}"),
         }
     }
 
     /// Attempts to deserialize a Web UI user from bytes.
     ///
-    /// # Panics
+    /// # Errors
     /// This function will return an error if deserializing
     /// it fails. Most likely, some data structure had a
     /// breaking change (or the file is corrupted).
-    fn from(webui: &[u8]) -> Self {
-        bincode::deserialize(webui).expect("valid web ui user")
+    fn from(webui: &[u8]) -> Result<Self> {
+        Ok(bincode::deserialize(webui)?)
     }
 
     /// Asks for a username and password on the CLI.
@@ -621,7 +674,6 @@ impl Backend {
     /// The name must be at least 2 characters long.
     /// The password must be at least 8 characters long.
     fn new() -> Result<Self> {
-        println!("please create a user for the webui!");
         let username = Text::new("username:")
             .with_validator(min_length!(2))
             .prompt()?;

@@ -6,7 +6,7 @@ use axum::{
     http::StatusCode,
 };
 use std::net::SocketAddr;
-use tracing::info;
+use tracing::{debug, info};
 
 // for documentation
 #[allow(unused_imports)]
@@ -25,20 +25,33 @@ pub async fn post(
     level: String,
 ) -> Result<(StatusCode, String)> {
     let addr = addr.ip();
-    info!("POST sent by {addr}: {level}");
+    info!("POST sent by {addr}");
+    debug!("{level}");
     if db.ip_is_banned(&addr) {
+        info!("{addr} is banned! :(");
         return Err(Error::Banned);
     }
 
     let level = Level::new(level, addr);
-    let mut parsed = level.into_parsed(&db.config.read())?;
+    debug!("Level is parsing...");
+    let try_parse = level.into_parsed(&db.config.read());
+    let mut parsed = match try_parse {
+        Ok(parsed) => parsed,
+        Err(why) => {
+            info!("POST failed! {why}");
+            return Err(why);
+        }
+    };
+    debug!("Level parsed.\n{parsed}");
     parsed.set_dates_to_now();
-    info!("POST completed:\n{parsed}");
+    info!("POST success: {} by {}", parsed.name, parsed.author);
+    debug!("{parsed}");
 
     let level = parsed.into_level();
     let key = level.key.to_string();
 
     db.insert_orphan(level);
+    debug!("Orphan inserted.");
     Ok((StatusCode::CREATED, key))
 }
 
@@ -65,9 +78,21 @@ pub async fn orphanage(
     let addr = addr.ip();
     info!("ADOPTION sent by {addr}");
 
-    let ssn = key.parse()?;
-    db.adopt_orphan(&ssn)?;
+    debug!("Key is parsing...");
+    let ssn = match key.parse() {
+        Ok(ssn) => ssn,
+        Err(why) => {
+            info!("ADOPTION failed: {why}");
+            return Err(why);
+        }
+    };
+    debug!("Key parsed.");
 
-    info!("ADOPTION successful!");
+    if let Err(why) = db.adopt_orphan(&ssn) {
+        info!("ADOPTION failed: {why}");
+        return Err(why);
+    };
+
+    info!("ADOPTION success");
     Ok(StatusCode::OK)
 }

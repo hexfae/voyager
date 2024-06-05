@@ -23,25 +23,51 @@ use crate::utils::level::Data;
 pub async fn put(
     State(db): State<SharedAppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    input: String,
+    level: String,
 ) -> Result<StatusCode> {
     let addr = addr.ip();
     info!("PUT sent by {addr}");
-    debug!("PUT sent by {addr}: {input}");
+    debug!("{level}");
     if db.ip_is_banned(&addr) {
+        info!("{addr} is banned! :(");
         return Err(Error::Banned);
     }
 
-    // TODO: improve
-    let level = Level::new_from_put(&input, addr)?;
+    let level = match Level::new_from_put(&level, addr) {
+        Ok(level) => level,
+        Err(why) => {
+            info!("PUT failed! {why}");
+            return Err(why);
+        }
+    };
     let key = level.key;
-    let mut parsed = level.into_parsed(&db.config.read())?;
+    debug!("Level is parsing...");
+    let try_parse = level.into_parsed(&db.config.read());
+    let mut parsed = match try_parse {
+        Ok(parsed) => parsed,
+        Err(why) => {
+            info!("PUT failed! {why}");
+            return Err(why);
+        }
+    };
+    debug!("Level parsed.\n{parsed}.");
 
-    let old_level = db.get(&key)?;
+    let old_level = match db.get(&key) {
+        Ok(level) => level,
+        Err(why) => {
+            info!("PUT failed! {why}");
+            return Err(why);
+        }
+    };
     parsed.set_dates_to_now();
-    parsed.set_uploaded_from(old_level, &db.config.read())?;
+    debug!("Upload is being set from old level...");
+    if let Err(why) = parsed.set_uploaded_from(old_level, &db.config.read()) {
+        info!("PUT failed! {why}");
+        return Err(why);
+    };
+    debug!("Upload set.");
+    info!("PUT success: {} by {}", parsed.name, parsed.author);
     let level = parsed.into_level();
     db.insert(level);
-    info!("PUT success by {addr}.");
     Ok(StatusCode::OK)
 }

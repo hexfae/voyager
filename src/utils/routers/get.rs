@@ -21,7 +21,7 @@ pub async fn get(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> String {
     info!(
-        "GET sent by {}; sending {} levels",
+        "GET sent by {}: sending {} levels",
         addr.ip(),
         db.levels_len()
     );
@@ -40,7 +40,7 @@ pub async fn get(
 /// are valid, but `key3` is not, Voyager will return 200 OK and `1101`.
 /// If any key fails to parse, Voyager will instead return 400 BAD REQUEST.
 ///
-/// Valid is defined as "a level with that key exists in the database."
+/// Valid is defined as "a level with a key that exists in the database."
 ///
 /// Returns 200 OK and a sequence of 0's and 1's, or 400 BAD REQUEST.
 pub async fn levels_exist(
@@ -49,24 +49,26 @@ pub async fn levels_exist(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> Result<(StatusCode, String)> {
     let addr = addr.ip();
-    info!("GET levels check sent by {addr}");
     let split_keys = keys.split(',').collect::<Vec<&str>>();
-    let keys = split_keys
-        .iter()
-        .filter_map(|key| key.parse::<Key>().ok())
+    let input_keys_len = split_keys.len();
+    info!("GET levels check sent by {addr}: {input_keys_len} keys");
+    let parsed_keys = split_keys
+        .into_iter()
+        .filter_map(Key::parse)
         .collect::<Vec<Key>>();
-    if keys.len() != split_keys.len() {
-        info!("GET levels check failed by {addr}; one or more keys were invalid!");
+    if parsed_keys.len() != input_keys_len {
+        let invalid_keys_len = input_keys_len - parsed_keys.len();
+        info!("GET levels check failed by {addr}! {invalid_keys_len} keys were invalid");
         // most probable error
         return Err(Error::InvalidKey(ulid::DecodeError::InvalidLength));
     }
-    let found = keys
+    let found = parsed_keys
         .iter()
-        .map(|key| i32::from(db.contains(key)).to_string())
+        .map(|key| u8::from(db.contains(key)).to_string())
         .collect::<Vec<String>>();
     let existing = found.join("");
     info!(
-        "GET levels check success by {addr}; returned {} levels",
+        "GET levels check success by {addr}: returned {} levels",
         found.len()
     );
     Ok((StatusCode::OK, existing))

@@ -6,7 +6,7 @@ use axum::{
     http::StatusCode,
 };
 use std::net::SocketAddr;
-use tracing::info;
+use tracing::{debug, info};
 
 /// Deletes a stored level in the database.
 ///
@@ -21,12 +21,29 @@ pub async fn delete(
     key: String,
 ) -> Result<StatusCode> {
     let addr = addr.ip();
-    info!("DELETE sent by {addr} for {key}");
+    info!("DELETE sent by {addr}");
     if db.ip_is_banned(&addr) {
-        info!("{addr} is banned");
+        info!("{addr} is banned! :(");
         return Err(Error::Banned);
     }
-    let key = key.parse()?;
-    info!("Deleting level {key}...");
-    db.delete(&key)
+    debug!("Key is parsing...");
+    let key = match key.parse() {
+        Ok(key) => key,
+        Err(why) => {
+            info!("Key could not be parsed! {why}");
+            return Err(why);
+        }
+    };
+    debug!("Key parsed.");
+    debug!("Level is being deleted...");
+    match db.delete(&key) {
+        Ok(status) => {
+            info!("DELETE success");
+            Ok(status)
+        }
+        Err(why) => {
+            info!("Level could not be deleted! {why}");
+            Err(why)
+        }
+    }
 }

@@ -14,6 +14,9 @@ use time::OffsetDateTime;
 use tracing::warn;
 use ulid::Ulid;
 
+#[allow(unused_imports)]
+use crate::utils::server::DEFAULT_ALLOWED_CHARACTERS;
+
 /// A level's name's max length.
 pub const MAX_NAME_LEN: usize = 30;
 
@@ -60,26 +63,28 @@ pub const BURDENS_4_BITS: u8 = 0b1111;
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Data(String);
 
-/// The default state of a level from POST and PUT requests. In
-/// order to be inserted into the database, the level must first
+/// The default state of a level from POST and PUT requests.
+///
+/// In order to be inserted into the database, the level must first
 /// be parsed (and therefore validated) via [`Level::into_parsed()`].
 /// before going through [`Parsed::into_level()`].
 #[derive(Debug, Clone)]
 pub struct Unvalidated;
 
-/// The required state for a level being inserted into the database. A
-/// level must go through [`Level::into_parsed()`] and then through
+/// The required state for a level being inserted into the database.
+///
+/// A level must go through [`Level::into_parsed()`] and then through
 /// [`Parsed::into_level()`].
 ///
-/// A validated level has a few guarantees: It has a valid version format.
+/// A validated level has a few guarantees: It has a valid format version.
 /// Name, description, and author are all valid strings and lengths.
 /// Music is one of the configured allowed songs. Brand and burdens are valid
 /// 36-bit and 4-bit numbers, respectively. It has an upload and last edit
 /// date in `yyyymmdd` format.
 ///
-/// The only thing that is not guaranteed is the validity of the tiles and
-/// objects. There is only a simple check that no character is invalid
-/// (Endless Void would never generate it) according to [`BLACK_HOLE_FORMAT`].
+/// However, the validity of the tiles and objects is not guaranteed. There
+/// is only a simple check that every character is in the configured list
+/// of allowed characters.
 #[derive(Debug, Clone)]
 pub struct Validated;
 
@@ -103,48 +108,54 @@ pub struct Level<State = Unvalidated> {
     state: PhantomData<State>,
 }
 
-/// The latest level format version.
+/// The level's format version.
 ///
-/// At the time of writing (2024-05-14), this is 2.
+/// At the time of writing (2024-06-02), this is 1 or 2.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Version(u8);
 
 /// The level's name.
 ///
-/// Encoded as standard Base64, with a
-/// minimum length of 1 and a max length of [`MAX_NAME_LEN`].
+/// Encoded as [`BASE64_STANDARD`], with a minimum
+/// length of 1 and a max length of [`MAX_NAME_LEN`].
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Name(String);
 
 /// The level's description.
 ///
-/// Encoded as standard Base64,
-/// with no minimum, but a max length of [`MAX_NAME_LEN`].
+/// Encoded as [`BASE64_STANDARD`], with no minimum,
+/// but a max length of [`MAX_NAME_LEN`].
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Description(String);
 
 /// The level's choice of music.
 ///
-/// Encoded as standard Base64, it must be one of the
+/// Encoded as [`BASE64_STANDARD`], it must be one of the
 /// configured allowed songs from [`VoyagerConfig`].
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Music(String);
 
 /// The level's author.
 ///
-/// Encoded as standard Base64, with a
-/// minimum length of 1 and a max length of [`MAX_AUTHOR_LEN`].
+/// Encoded as [`BASE64_STANDARD`], with a minimum
+/// length of 1 and a max length of [`MAX_AUTHOR_LEN`].
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Author(String);
 
 /// The level's author brand.
 ///
-/// Brand is a 6x6 grid consisting
-/// of either white or black pixels. As such, the brand is
-/// encoded as 36 bits, and is therefore stored as a u64 in
-/// Voyager and sent to/from Endless Void as a base-10 integer.
+/// Brand is a 6x6 grid consisting of either white or
+/// black pixels. As such, the brand is encoded as 36
+/// bits, and is therefore stored as a u64 in Voyager
+/// and sent to/from Endless Void as a base 10 integer.
 ///
-/// See [`BRAND_36_BITS`] for the biggest brand possible.
+/// The pixels/bits are stored in least significant order.
+/// For example, a brand with the first 4 pixels white and
+/// the rest black would be represented in Voyager as a u64
+/// with 60 0's followed by 4 1's in binary, or 15 in base 10.
+///
+/// See [`BRAND_36_BITS`] for the biggest brand possible (a
+/// completely white 6x6 grid).
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Brand(u64);
 
@@ -164,10 +175,11 @@ pub struct Edited(String);
 
 /// The level's burdens.
 ///
-/// There are 4 possible burdens that may be on or off.
-/// As such, the burdens can be encoded as 4 bits, and
-/// is therefore stored as a u8 in Voyager and sent to/from
-/// Endless Void as a base-10 integer.
+/// A burden is an item that gives the player special abilities
+/// in-game. There are 4 possible burdens which may all be
+/// independently toggled on or off. As such, the burdens can
+/// be encoded as 4 bits, and are therefore stored as a u8 in
+/// Voyager and sent to/from Endless Void as a base-10 integer.
 ///
 /// See `[BURDENS_4_BITS]` for the biggest value possible.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
@@ -176,7 +188,9 @@ pub struct Burdens(u8);
 /// The level's tiles.
 ///
 /// Encoded in Endless Void's black hole format. See
-/// [`BLACK_HOLE_FORMAT`] for all allowed characters.
+/// [`VoyagerConfig`] or [`DEFAULT_ALLOWED_CHARACTERS`]
+/// for a list of default allowed characters.
+///
 /// Check Endless Void's documentation for more details.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Tiles(String);
@@ -184,7 +198,9 @@ pub struct Tiles(String);
 /// The level's objects.
 ///
 /// Encoded in Endless Void's black hole format. See
-/// [`BLACK_HOLE_FORMAT`] for all allowed characters.
+/// [`VoyagerConfig`] or [`DEFAULT_ALLOWED_CHARACTERS`]
+/// for a list of default allowed characters.
+///
 /// Check Endless Void's documentation for more details.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Objects(String);
@@ -315,11 +331,10 @@ impl BrandImage {
 impl Level<Unvalidated> {
     /// Creates a new (possibly invalid) Void Stranger level, for POST.
     ///
-    /// See [`Data`] for details on valid POST input.
-    ///
     /// The input is not validated at this point. Therefore,
     /// the level should be parsed (validated) using
     /// [`Self::into_parsed`] before insertion into the database.
+    ///
     /// See [`Data`] for details on validity.
     pub fn new(data: String, ip: IpAddr) -> Self {
         Self {
@@ -332,12 +347,15 @@ impl Level<Unvalidated> {
 
     /// Creates a new (possibly invalid) Void Stranger level, for PUT.
     ///
-    /// See [`Data`] for details on valid PUT input.
-    ///
     /// The input is not validated at this point. Therefore,
     /// the level should be parsed (validated) using
     /// [`Self::into_parsed`] before insertion into the database.
+    ///
     /// See [`Data`] for details on validity.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the input is invalid.
     pub fn new_from_put(input: &str, ip: IpAddr) -> Result<Self> {
         let (input, key) = input.rsplit_once('|').ok_or(Error::InvalidStructure)?;
         Ok(Self {
@@ -351,6 +369,11 @@ impl Level<Unvalidated> {
 
 impl<State> Level<State> {
     /// Parses and validates the level.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the input had an invalid structure, contained invalid
+    /// Base64, produced invalid UTF-8, or does not use one of the allowed songs.
     pub fn into_parsed(self, config: &VoyagerConfig) -> Result<Parsed> {
         let (
             version,
@@ -650,6 +673,13 @@ impl Objects {
             return Err(Error::InvalidObjects);
         }
         Ok(Self(input.to_string()))
+    }
+}
+
+impl Key {
+    /// Parses input as a ULID key.
+    pub fn parse(input: &str) -> Option<Self> {
+        Self::from_str(input).ok()
     }
 }
 

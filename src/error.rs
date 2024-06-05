@@ -104,9 +104,15 @@ pub enum Error {
     /// An error occured during password hashing for Web UI login.
     #[error("tokio task join error in webui: {0}")]
     TaskJoin(#[from] tokio::task::JoinError),
-    /// On startup, if Voyager could not bind to the port 3000.
+    /// The saved Web UI user is invalid.
+    #[error("invalid web ui user")]
+    WebUI,
+    /// On startup, if Voyager could not bind to the port
+    /// 3000, or could not create the `voyager` directory.
     ///
-    /// Most likely, another application is using it.
+    /// Most likely, another application is using the port,
+    /// or the user does not have write permissions in
+    /// the current directory (or is out of storage?).
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
     /// On startup, an error occurred when asking for a username
@@ -114,7 +120,7 @@ pub enum Error {
     #[error("inquire error: {0}")]
     Inquire(#[from] inquire::InquireError),
     /// On startup, an error occurred when setting up
-    /// a file watcher for hot-reloading the config.
+    /// a file watcher for hot reloading the config.
     #[error("config watch error: {0}")]
     Watch(#[from] notify_debouncer_mini::notify::Error),
     #[error("bincode (de)serialization error: {0}")]
@@ -129,6 +135,12 @@ pub enum Error {
     /// report it!), or the file is corrupted.
     #[error("ron deserialization error: {0}")]
     Ron(#[from] ron::de::SpannedError),
+    /// The `voyager` directory could not be created.
+    ///
+    /// The executable must be renamed from `voyager`
+    /// (e.g. to `voyagerexe`, `voyager-amd64, ...`).
+    #[error("voyager directory could not be created/opened; rename the executable if it's called voyager")]
+    Directory,
 }
 
 /// All number-related Voyager errors.
@@ -190,25 +202,15 @@ pub enum StringError {
 }
 
 use axum::http::StatusCode;
-use tracing::{info, warn};
 
 impl axum::response::IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         let message = self.to_string();
         let status = match self {
-            Self::LevelNotFound => {
-                info!("{self}");
-                StatusCode::NOT_FOUND
-            }
-            Self::Io(why) => {
-                warn!("{why}");
-                StatusCode::INTERNAL_SERVER_ERROR
-            }
+            Self::LevelNotFound => StatusCode::NOT_FOUND,
+            Self::Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::Banned => StatusCode::FORBIDDEN,
-            other => {
-                info!("{other}");
-                StatusCode::BAD_REQUEST
-            }
+            _ => StatusCode::BAD_REQUEST,
         };
         (status, message).into_response()
     }
