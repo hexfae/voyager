@@ -236,6 +236,7 @@ impl VoyagerConfig {
                     }
                     Ok(config) => {
                         info!("Config loaded: {config}.");
+                        config.save();
                         Ok(config)
                     }
                 }
@@ -243,36 +244,36 @@ impl VoyagerConfig {
         )
     }
 
-    // /// Attempts to load a Voyager config from `voyager/config.ron`.
-    // ///
-    // /// This function is used for hot reloading the config
-    // /// while Voyager is running.
-    // ///
-    // /// If it fails (likely due to the configuration being
-    // /// changed to something invalid), it logs it and keeps
-    // /// running without switching to the new config.
-    // pub fn try_load() -> Option<Self> {
-    //     debug!("Config is opening for hot reload...");
-    //     read_to_string("voyager/config.ron").map_or_else(
-    //         |why| {
-    //             warn!("Config could not be opened for hot reload! {why}");
-    //             None
-    //         },
-    //         |string| {
-    //             debug!("Config opened. Config is loading...");
-    //             match ron::from_str(&string) {
-    //                 Err(why) => {
-    //                     warn!("Config could not be loaded! {why}");
-    //                     None
-    //                 }
-    //                 Ok(config) => {
-    //                     info!("Config reloaded: {config}");
-    //                     Some(config)
-    //                 }
-    //             }
-    //         },
-    //     )
-    // }
+    /// Attempts to load a Voyager config from `voyager/config.ron`.
+    ///
+    /// This function is used for hot reloading the config
+    /// while Voyager is running.
+    ///
+    /// If it fails (likely due to the configuration being
+    /// changed to something invalid), it logs it and keeps
+    /// running without switching to the new config.
+    pub fn try_reload() -> Option<Self> {
+        debug!("Config is opening for hot reload...");
+        read_to_string("voyager/config.ron").map_or_else(
+            |why| {
+                warn!("Config could not be opened for hot reload! {why}");
+                None
+            },
+            |string| {
+                debug!("Config opened. Config is loading...");
+                match ron::from_str(&string) {
+                    Err(why) => {
+                        warn!("Config could not be loaded! {why}");
+                        None
+                    }
+                    Ok(config) => {
+                        info!("Config reloaded: {config}");
+                        Some(config)
+                    }
+                }
+            },
+        )
+    }
 }
 
 impl Default for VoyagerConfig {
@@ -347,7 +348,7 @@ impl AppState {
     ///
     /// See [`VoyagerConfig::try_load()`] for details.
     pub fn reload_config(&self) {
-        if let Ok(config) = VoyagerConfig::try_load() {
+        if let Some(config) = VoyagerConfig::try_reload() {
             *self.config.write() = config;
         }
     }
