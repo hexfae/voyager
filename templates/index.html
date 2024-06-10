@@ -5,6 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Voyager</title>
+  <script src="https://unpkg.com/htmx.org@1.9.12" integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2" crossorigin="anonymous"></script>
   <style>
     *:where(:not(html, iframe, canvas, img, svg, video, audio):not(svg *, symbol *)) {
       all: unset;
@@ -147,7 +148,7 @@
       color: #e0e0e0;
     }
 
-    input {
+    button {
       width: max-content;
       cursor: pointer;
       background-color: #212121;
@@ -161,6 +162,12 @@
     input:hover {
       background-color: #262626;
     }
+
+    tr.htmx-swapping td {
+      transition: opacity 0.5s ease-in-out;
+      opacity: 0;
+    }
+
   </style>
 </head>
 
@@ -183,33 +190,20 @@
         <th>ip ban</th>
       </tr>
     </thead>
-    <tbody>
-      {% for level in levels %}
-      <tr>
-        <td>{{ level.version }}</td>
-        <td>{{ level.name }}</td>
-        <td>{{ level.description }}</td>
-        <td>{{ level.music }}</td>
-        <td>{{ level.author }}</td>
-        <td><img title="{{ level.brand }}" src="data:image/png;base64,{{ level.brand_image }}"></td>
-        <td>{{ level.uploaded }}</td>
-        <td>{{ level.edited }}</td>
-        <td>{{ level.burdens }}</td>
-        <td> <span class="sensitive">{{ level.key }}</span></td>
-        <td> <span class="sensitive">{{ level.uploader }}</span></td>
-        <td>
-          <form action="/voyager/webui/delete/{{ level.key }}" method="post">
-            <input type="submit" value="delete">
-          </form>
-        </td>
-        <td>
-          <form action="/voyager/webui/ban/{{ level.uploader }}" method="post">
-            <input type="submit" value="Ban This Kid">
-          </form>
-        </td>
-      </tr>
-
-      {% endfor %}
-    </tbody>
+    <tbody style="width: 100%;" hx-get="/voyager/webui/levels" hx-trigger="load" hx-swap="outerHTML">
+      <td>loading…</td>
+      <td>loading…</td>
+      <td>loading…</td>
+      <td>loading…</td>
+      <td>loading…</td>
+      <td>loading…</td>
+      <td>loading…</td>
+      <td>loading…</td>
+      <td>loading…</td>
+      <td>loading…</td>
+      <td>loading…</td>
+      <td>loading…</td>
+      <td>loading…</td>
+    </tobdy>
   </table>
 </body>

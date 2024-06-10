@@ -34,6 +34,5 @@ Please contribute
 ## To-do list
 
 - [ ] Level packs.
-- [ ] Comprehensive logging.
-- [ ] Even better documentation.
+- [ ] PERFECT documentation.
 - [ ] Testing?
