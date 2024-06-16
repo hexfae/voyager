@@ -312,8 +312,8 @@ impl BrandImage {
         let mut img = ImageBuffer::<Rgb<u8>, _>::new(width, height);
         let bits = input.0.view_bits::<Lsb0>();
         for (x, y, pixel) in img.enumerate_pixels_mut() {
-            let pixel_is_black = bits[(x + y * height) as usize];
-            *pixel = if pixel_is_black {
+            let pixel_is_white = bits[(x + y * height) as usize];
+            *pixel = if pixel_is_white {
                 Rgb([255, 255, 255])
             } else {
                 Rgb([0, 0, 0])
