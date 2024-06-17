@@ -8,6 +8,15 @@ use bitvec::view::BitView;
 use derive_more::Display;
 use image::{ImageBuffer, ImageFormat, Rgb};
 use itertools::Itertools;
+use nom::{
+    branch::alt,
+    bytes::complete::{tag, take, take_until1, take_while, take_while_m_n},
+    character::complete::char,
+    combinator::map_res,
+    multi::{count, many1},
+    sequence::{preceded, terminated, tuple},
+    IResult,
+};
 use serde::{Deserialize, Serialize};
 use std::{io::Cursor, marker::PhantomData, net::IpAddr, str::FromStr};
 use time::OffsetDateTime;
@@ -35,6 +44,56 @@ pub const BRAND_36_BITS: u64 = 0b1111_1111_1111_1111_1111_1111_1111_1111_1111;
 ///
 /// Equal to 2^4-1 or 15.
 pub const BURDENS_4_BITS: u8 = 0b1111;
+
+const ALLOWED_TILES: &[&str; 18] = &[
+    "pt", // pit
+    "fl", // floor
+    "gl", // glass
+    "mn", // bomb
+    "xp", // lit bomb
+    "fs", // floor switch
+    "cr", // copy floor
+    "ex", // exit
+    "df", // death floor
+    "bl", // black floor
+    "wh", // blank/empty/white floor/tile
+    "wa", // wall
+    "mw", // mon/funhouse wall
+    "dw", // DIS wall
+    "ew", // EX wall
+    "ed", // edge
+    "de", // DIS edge
+    "st", // small chest
+];
+
+const ALLOWED_OBJECTS: &[&str; 26] = &[
+    "em", // empty
+    "pl", // player
+    "cl", // leech
+    "cc", // maggot
+    "cg", // bull/beaver
+    "cs", // gobbler/smile
+    "ch", // hand/eye
+    "cm", // mimic
+    "co", // diamond/octahedron
+    "hu", // hungry/famished man
+    "ad", // add statue
+    "cf", // cif statue
+    "be", // bee statue
+    "tn", // tan statue
+    "lv", // lev statue
+    "mo", // mon statue
+    "eu", // eus statue
+    "go", // gor statue
+    "jb", // jukebox
+    "eg", // egg
+    "ho", // hologram
+    "mm", // memory crystal
+    "se", // secret exit
+    "ct", // spider
+    "sd", // scaredeer
+    "cv", // orb thing
+];
 
 /// A level's data, as sent to Endless Void.
 ///
@@ -403,8 +462,8 @@ impl<State> Level<State> {
         let uploaded = Uploaded(uploaded.to_string());
         let edited = Edited(edited.to_string());
         let burdens = Burdens::try_from(burdens)?;
-        let tiles = Tiles::try_from(tiles, config)?;
-        let objects = Objects::try_from(objects, config)?;
+        let tiles = Tiles::try_from(tiles)?;
+        let objects = Objects::try_from(objects)?;
         let key = self.key;
         let ip = self.uploader;
 
@@ -638,22 +697,60 @@ impl TryFrom<&str> for Burdens {
     }
 }
 
+fn opt_variant(input: &str) -> IResult<&str, &str> {
+    take_while(is_digit)(input)
+}
+
+fn opt_repeat(input: &str) -> IResult<&str, (&str, &str)> {
+    tuple((take_while(is_x), take_while(is_digit)))(input)
+}
+
+const fn is_digit(input: char) -> bool {
+    input.is_ascii_digit()
+}
+
+const fn is_lowercase(input: char) -> bool {
+    input.is_ascii_lowercase()
+}
+
+const fn is_x(input: char) -> bool {
+    input == 'X'
+}
+
 impl Tiles {
     /// Parses input as tiles from Void Stranger.
     ///
     /// # Errors
-    /// Returns an error if any character was not found
-    /// in the config list of allowed characters.
-    fn try_from(input: &str, config: &VoyagerConfig) -> Result<Self> {
-        // TODO: is there some way to actually validate level data?
-        // if any character is not in the list of allowed characters
-        if input
-            .chars()
-            .any(|char| !config.allowed_characters.contains(char))
-        {
+    /// Returns an error if any tile was invalid.
+    fn try_from(input: &str) -> Result<Self> {
+        Self::parse(input)?;
+        Ok(Self(input.to_string()))
+    }
+
+    fn parse(input: &str) -> Result<()> {
+        let (remaining, _) =
+            many1(tuple((tile, opt_variant, opt_repeat)))(input).map_err(|why| {
+                warn!("{why}");
+                Error::InvalidTiles
+            })?;
+        if !remaining.is_empty() {
+            warn!("probably unrecognized tile! remaining: {remaining}");
             return Err(Error::InvalidTiles);
         }
-        Ok(Self(input.to_string()))
+        Ok(())
+    }
+}
+
+fn tile(input: &str) -> IResult<&str, &str> {
+    map_res(take_while_m_n(2, 2, is_lowercase), to_tile)(input)
+}
+
+fn to_tile(input: &str) -> Result<&str> {
+    if ALLOWED_TILES.contains(&input) {
+        Ok(input)
+    } else {
+        warn!("unrecognized tile! {input}");
+        Err(Error::InvalidTiles)
     }
 }
 
@@ -661,18 +758,73 @@ impl Objects {
     /// Parses input as objects from Void Stranger.
     ///
     /// # Errors
-    /// Returns an error if any character was not found
-    /// in the config list of allowed characters.
-    fn try_from(input: &str, config: &VoyagerConfig) -> Result<Self> {
-        // TODO: is there some way to actually validate level data?
-        // if any character is not in the list of allowed characters
-        if input
-            .chars()
-            .any(|char| !config.allowed_characters.contains(char))
-        {
+    /// Returns an error if any object was invalid.
+    fn try_from(input: &str) -> Result<Self> {
+        Self::parse(input)?;
+        Ok(Self(input.to_string()))
+    }
+
+    fn parse(input: &str) -> Result<()> {
+        let (remaining, _) = many1(tuple((
+            alt((add_statue, egg, object)),
+            opt_variant,
+            opt_repeat,
+        )))(input)
+        .map_err(|why| {
+            warn!("{why}");
+            Error::InvalidObjects
+        })?;
+        if !remaining.is_empty() {
+            warn!("probably unrecognized object! remaining: {remaining}");
             return Err(Error::InvalidObjects);
         }
-        Ok(Self(input.to_string()))
+        Ok(())
+    }
+}
+
+fn object(input: &str) -> IResult<&str, String> {
+    map_res(take_while_m_n(2, 2, is_lowercase), to_object)(input)
+}
+
+fn add_statue(input: &str) -> IResult<&str, String> {
+    alt((
+        preceded(
+            tag("ad1"),
+            count(terminated(take_until1("!"), char('!')), 2),
+        ),
+        preceded(
+            tag("ad2"),
+            count(terminated(take_until1("!"), char('!')), 4),
+        ),
+    ))(input)
+    .map(|(remaining, output)| (remaining, output.join("")))
+}
+
+fn egg(input: &str) -> IResult<&str, String> {
+    let (remaining, number_of_dialogues) =
+        preceded(tag("eg"), map_res(take(1u8), |n: &str| n.parse::<usize>()))(input)?;
+    let (remaining, dialogues) = count(
+        terminated(map_res(take_until1("!"), decode_base64), char('!')),
+        number_of_dialogues,
+    )(remaining)?;
+    Ok((remaining, dialogues.join("")))
+}
+
+fn decode_base64(input: &str) -> Result<String> {
+    String::from_utf8(
+        BASE64_STANDARD
+            .decode(input)
+            .map_err(|_| Error::InvalidObjects)?,
+    )
+    .map_err(|_| Error::InvalidObjects)
+}
+
+fn to_object(input: &str) -> Result<String> {
+    if ALLOWED_OBJECTS.contains(&input) {
+        Ok(input.into())
+    } else {
+        warn!("unrecognized object! {input}");
+        Err(Error::InvalidTiles)
     }
 }
 

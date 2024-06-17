@@ -2538,6 +2538,7 @@ dependencies = [
  "image",
  "inquire",
  "itertools 0.12.1",
+ "nom",
  "notify-debouncer-mini",
  "parking_lot",
  "password-auth",
