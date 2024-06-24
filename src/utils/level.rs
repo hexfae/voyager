@@ -9,7 +9,7 @@ use derive_more::Display;
 use image::{ImageBuffer, ImageFormat, Rgb};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use std::{io::Cursor, marker::PhantomData, net::IpAddr, str::FromStr};
+use std::{convert::Infallible, io::Cursor, marker::PhantomData, net::IpAddr, str::FromStr};
 use time::OffsetDateTime;
 use tracing::warn;
 use ulid::Ulid;
@@ -309,7 +309,7 @@ pub enum ObjectType {
     /// An egg has a list of messages that will be displayed when interacted with (?). The
     /// length may be (and is often) 0. The longest length found in the wild is 4 (the max?).
     Egg {
-        /// See [`Message`].
+        /// See [`ObjectType::Egg`].
         messages: Vec<Message>,
     },
 }
@@ -490,8 +490,7 @@ pub struct Level<State = Unvalidated> {
     state: PhantomData<State>,
 }
 
-#[allow(clippy::doc_markdown)]
-/// A level's representation in the WebUI.
+/// A level's representation in the Web UI.
 #[allow(clippy::module_name_repetitions)]
 pub struct IndexLevel {
     /// See [`Version`].
@@ -681,7 +680,7 @@ pub struct Edited(String);
 /// be encoded as 4 bits, and are therefore stored as a u8 in
 /// Voyager and sent to/from Endless Void as a base-10 integer.
 ///
-/// See `[BURDENS_4_BITS]` for the biggest value possible.
+/// See [`BURDENS_4_BITS`] for the biggest value possible.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Burdens(u8);
 
@@ -723,10 +722,10 @@ pub struct ParsedObjects(pub Vec<Object>);
 #[derive(Debug, Display, Clone, Copy, Serialize, Deserialize, Hash, Eq, PartialEq)]
 pub struct Key(Ulid);
 
-impl TryFrom<&str> for TileId {
-    type Error = Error;
+impl FromStr for TileId {
+    type Err = Error;
 
-    fn try_from(input: &str) -> Result<Self> {
+    fn from_str(input: &str) -> Result<Self> {
         match input {
             "pt" => Ok(Self::Pit),
             "fl" => Ok(Self::Floor),
@@ -751,10 +750,10 @@ impl TryFrom<&str> for TileId {
     }
 }
 
-impl TryFrom<&str> for ObjectId {
-    type Error = Error;
+impl FromStr for ObjectId {
+    type Err = Error;
 
-    fn try_from(input: &str) -> Result<Self> {
+    fn from_str(input: &str) -> Result<Self> {
         match input {
             "em" => Ok(Self::Empty),
             "pl" => Ok(Self::Player),
@@ -820,14 +819,14 @@ impl ObjectType {
     pub fn add_statue(input: Vec<String>) -> Result<Self> {
         match input.len() {
             2 => Ok(Self::AddStatue1 {
-                first_input: InputValue::from(&input[0]),
-                destroy_value: DestroyValue::try_from(&input[1])?,
+                first_input: InputValue::from_str(&input[0])?,
+                destroy_value: DestroyValue::from_str(&input[1])?,
             }),
             4 => Ok(Self::AddStatue2 {
-                first_input: InputValue::from(&input[0]),
-                second_input: InputValue::from(&input[1]),
-                destroy_value: DestroyValue::try_from(&input[2])?,
-                branefuck: BranefuckProgram::try_from(input[3].as_str())?,
+                first_input: InputValue::from_str(&input[0])?,
+                second_input: InputValue::from_str(&input[1])?,
+                destroy_value: DestroyValue::from_str(&input[2])?,
+                branefuck: BranefuckProgram::from_str(&input[3])?,
             }),
             _ => Err(Error::InvalidObjects),
         }
@@ -838,15 +837,15 @@ impl ObjectType {
     /// See [`Direction`] for details.
     pub fn direction(input: &str) -> Result<Self> {
         Ok(Self::Direction {
-            direction: Direction::try_from(input)?,
+            direction: Direction::from_str(input)?,
         })
     }
 }
 
-impl TryFrom<&str> for Direction {
-    type Error = Error;
+impl FromStr for Direction {
+    type Err = Error;
 
-    fn try_from(input: &str) -> Result<Self> {
+    fn from_str(input: &str) -> Result<Self> {
         match input {
             // TODO: what are the actual directions?
             "0" => Ok(Self::Up),
@@ -858,43 +857,45 @@ impl TryFrom<&str> for Direction {
     }
 }
 
-impl From<&String> for InputValue {
-    fn from(input: &String) -> Self {
-        match input.as_str() {
-            "leech_count" => Self::LeechCount,
-            "maggot_count" => Self::MaggotCount,
-            "beaver_count" => Self::BeaverCount,
-            "smile_count" => Self::SmileCount,
-            "eye_count" => Self::EyeCount,
-            "mimic_count" => Self::MimicCount,
-            "octahedron_count" => Self::OctahedronCount,
-            "spider_count" => Self::SpiderCount,
-            "orb_count" => Self::OrbCount,
-            "scaredeer_count" => Self::ScaredeerCount,
-            "player_x" => Self::PlayerX,
-            "player_y" => Self::PlayerY,
-            "editor_time" => Self::EditorTime,
-            "add_count" => Self::AddCount,
-            "mon_count" => Self::MonCount,
-            "tan_count" => Self::TanCount,
-            "lev_count" => Self::LevCount,
-            "eus_count" => Self::EusCount,
-            "bee_count" => Self::BeeCount,
-            "gor_count" => Self::GorCount,
-            "cif_count" => Self::CifCount,
-            "jukebox_count" => Self::JukeboxCount,
-            "egg_count" => Self::EggCount,
-            _ => input
+impl FromStr for InputValue {
+    type Err = Infallible;
+
+    fn from_str(input: &str) -> Result<Self, Infallible> {
+        match input {
+            "leech_count" => Ok(Self::LeechCount),
+            "maggot_count" => Ok(Self::MaggotCount),
+            "beaver_count" => Ok(Self::BeaverCount),
+            "smile_count" => Ok(Self::SmileCount),
+            "eye_count" => Ok(Self::EyeCount),
+            "mimic_count" => Ok(Self::MimicCount),
+            "octahedron_count" => Ok(Self::OctahedronCount),
+            "spider_count" => Ok(Self::SpiderCount),
+            "orb_count" => Ok(Self::OrbCount),
+            "scaredeer_count" => Ok(Self::ScaredeerCount),
+            "player_x" => Ok(Self::PlayerX),
+            "player_y" => Ok(Self::PlayerY),
+            "editor_time" => Ok(Self::EditorTime),
+            "add_count" => Ok(Self::AddCount),
+            "mon_count" => Ok(Self::MonCount),
+            "tan_count" => Ok(Self::TanCount),
+            "lev_count" => Ok(Self::LevCount),
+            "eus_count" => Ok(Self::EusCount),
+            "bee_count" => Ok(Self::BeeCount),
+            "gor_count" => Ok(Self::GorCount),
+            "cif_count" => Ok(Self::CifCount),
+            "jukebox_count" => Ok(Self::JukeboxCount),
+            "egg_count" => Ok(Self::EggCount),
+            _ => Ok(input
                 .parse::<u32>()
-                .map_or_else(|_| Self::Unknown(input.into()), Self::Number),
+                .map_or_else(|_| Self::Unknown(input.into()), Self::Number)),
         }
     }
 }
 
-impl TryFrom<&str> for BranefuckProgram {
-    type Error = Error;
+impl FromStr for BranefuckProgram {
+    type Err = Error;
 
-    fn try_from(input: &str) -> Result<Self> {
+    fn from_str(input: &str) -> Result<Self> {
         if input.chars().all(|c| BRANEFUCK_CHARACTERS.contains(c)) {
             Ok(Self(input.into()))
         } else {
@@ -903,10 +904,10 @@ impl TryFrom<&str> for BranefuckProgram {
     }
 }
 
-impl TryFrom<&String> for DestroyValue {
-    type Error = Error;
+impl FromStr for DestroyValue {
+    type Err = Error;
 
-    fn try_from(input: &String) -> Result<Self> {
+    fn from_str(input: &str) -> Result<Self> {
         Ok(Self(
             input.parse::<u32>().map_err(|_| Error::InvalidObjects)?,
         ))
@@ -980,16 +981,16 @@ impl<State> Level<State> {
             .ok_or(Error::InvalidStructure)?;
 
         let version = Version::try_from(version, config)?;
-        let name = Name::try_from(name)?;
-        let description = Description::try_from(description)?;
-        let music = Music::try_from(music, config)?;
-        let author = Author::try_from(author)?;
-        let brand = Brand::try_from(brand)?;
+        let name = name.parse()?;
+        let description = description.parse()?;
+        let music = Music::from_str(music, config)?;
+        let author = author.parse()?;
+        let brand = brand.parse()?;
         let uploaded = Uploaded(uploaded.to_string());
         let edited = Edited(edited.to_string());
-        let burdens = Burdens::try_from(burdens)?;
-        let tiles = Tiles::from(tiles);
-        let objects = Objects::from(objects);
+        let burdens = burdens.parse()?;
+        let tiles = tiles.parse()?;
+        let objects = objects.parse()?;
         let key = self.key;
         let ip = self.uploader;
 
@@ -1011,8 +1012,6 @@ impl<State> Level<State> {
     }
 }
 
-#[allow(clippy::doc_markdown)]
-/// A level's representation in the WebUI.
 impl IndexLevel {
     /// Creates a new [`IndexLevel`] from a parsed level.
     pub fn new(input: Parsed) -> Self {
@@ -1119,10 +1118,10 @@ impl Version {
     }
 }
 
-impl TryFrom<&str> for Name {
-    type Error = Error;
+impl FromStr for Name {
+    type Err = Error;
 
-    fn try_from(input: &str) -> std::prelude::v1::Result<Self, Self::Error> {
+    fn from_str(input: &str) -> Result<Self> {
         let name = String::from_utf8(
             BASE64_STANDARD
                 .decode(input)
@@ -1142,10 +1141,10 @@ impl TryFrom<&str> for Name {
     }
 }
 
-impl TryFrom<&str> for Description {
-    type Error = Error;
+impl FromStr for Description {
+    type Err = Error;
 
-    fn try_from(input: &str) -> std::prelude::v1::Result<Self, Self::Error> {
+    fn from_str(input: &str) -> Result<Self> {
         let description = String::from_utf8(
             BASE64_STANDARD
                 .decode(input)
@@ -1168,7 +1167,7 @@ impl Music {
     /// # Errors
     /// Returns an error if the input was invalid Base64,
     /// produced invalid UTF-8, or is not one of the allowed songs.
-    fn try_from(input: &str, config: &VoyagerConfig) -> Result<Self> {
+    fn from_str(input: &str, config: &VoyagerConfig) -> Result<Self> {
         let music = String::from_utf8(
             BASE64_STANDARD
                 .decode(input)
@@ -1182,10 +1181,10 @@ impl Music {
     }
 }
 
-impl TryFrom<&str> for Author {
-    type Error = Error;
+impl FromStr for Author {
+    type Err = Error;
 
-    fn try_from(input: &str) -> std::prelude::v1::Result<Self, Self::Error> {
+    fn from_str(input: &str) -> Result<Self> {
         let author = String::from_utf8(
             BASE64_STANDARD
                 .decode(input)
@@ -1205,10 +1204,10 @@ impl TryFrom<&str> for Author {
     }
 }
 
-impl TryFrom<&str> for Brand {
-    type Error = Error;
+impl FromStr for Brand {
+    type Err = Error;
 
-    fn try_from(input: &str) -> std::prelude::v1::Result<Self, Self::Error> {
+    fn from_str(input: &str) -> Result<Self> {
         let brand = input
             .parse::<u64>()
             .map_err(|why| Error::InvalidBrand(NumberError::NotANumber(why)))?;
@@ -1249,10 +1248,10 @@ impl BrandImage {
     }
 }
 
-impl TryFrom<&str> for Burdens {
-    type Error = Error;
+impl FromStr for Burdens {
+    type Err = Error;
 
-    fn try_from(input: &str) -> std::prelude::v1::Result<Self, Self::Error> {
+    fn from_str(input: &str) -> Result<Self> {
         let burdens = input
             .parse::<u8>()
             .map_err(|why| Error::InvalidBurdens(NumberError::NotANumber(why)))?;
@@ -1266,35 +1265,41 @@ impl TryFrom<&str> for Burdens {
     }
 }
 
-impl From<&str> for Tiles {
+impl FromStr for Tiles {
+    type Err = Infallible;
+
     /// Checks the input for validity and returns [`Tiles`].
     ///
-    /// See [`ParsedTiles::parse()`] for details.
+    /// See [`ParsedTiles::from_str()`] for details.
     ///
     /// On invalid input, this function will log a warning instead of returning
     /// an error, because I am only 99% confident in the parser.
-    fn from(input: &str) -> Self {
+    fn from_str(input: &str) -> Result<Self, Infallible> {
         // i am only 99% confident in the parser, so for now,
         // only log if an error happens
-        if let Err(why) = ParsedTiles::parse(input) {
+        if let Err(why) = ParsedObjects::from_str(input) {
             warn!("error while parsing tiles: {why}");
         };
-        Self(input.to_owned())
+        Ok(Self(input.to_owned()))
     }
 }
 
-impl From<&str> for Objects {
+impl FromStr for Objects {
+    type Err = Infallible;
+
     /// Checks the input for validity and returns [`Objects`].
     ///
-    /// See [`ParsedObjects::parse()`] for details.
+    /// See [`ParsedObjects::from_str()`] for details.
     ///
     /// On invalid input, this function will log a warning instead of returning
     /// an error, because I am only 99% confident in the parser.
-    fn from(input: &str) -> Self {
-        if let Err(why) = ParsedObjects::parse(input) {
+    fn from_str(input: &str) -> Result<Self, Infallible> {
+        // i am only 99% confident in the parser, so for now,
+        // only log if an error happens
+        if let Err(why) = ParsedObjects::from_str(input) {
             warn!("error while parsing objects: {why}");
         };
-        Self(input.to_string())
+        Ok(Self(input.to_string()))
     }
 }
 
@@ -1303,12 +1308,6 @@ impl Key {
     /// key for a level.
     fn new() -> Self {
         Self(Ulid::new())
-    }
-
-    /// Attempts to parse the input as a
-    /// [ULID](https://github.com/ulid/spec) key.
-    pub fn parse(input: &str) -> Option<Self> {
-        Self::from_str(input).ok()
     }
 }
 

@@ -6,8 +6,11 @@
 // for documentation
 #[allow(unused_imports)]
 use crate::utils::level::{
-    BRAND_36_BITS, BURDENS_4_BITS, MAX_AUTHOR_LEN, MAX_DESCRIPTION_LEN, MAX_NAME_LEN,
+    InputValue, Objects, Tiles, BRAND_36_BITS, BURDENS_4_BITS, MAX_AUTHOR_LEN, MAX_DESCRIPTION_LEN,
+    MAX_NAME_LEN,
 };
+#[allow(unused_imports)]
+use std::str::FromStr;
 
 /// The main error type, containing all possible fail-states of Voyager.
 #[derive(thiserror::Error, Debug)]
@@ -141,6 +144,14 @@ pub enum Error {
     /// (e.g. to `voyagerexe`, `voyager-amd64, ...`).
     #[error("voyager directory could not be created/opened; rename the executable if it's called voyager")]
     Directory,
+    #[error(transparent)]
+    /// Used for "impossible" errors.
+    ///
+    /// This is used in the [`FromStr`] implementations for
+    /// [`InputValue`], [`Tiles`], and [`Objects`], since
+    /// implementing [`FromStr`] is apparently preferred to
+    /// [`From<&str>`]
+    Infallible(#[from] std::convert::Infallible),
 }
 
 /// All number-related Voyager errors.

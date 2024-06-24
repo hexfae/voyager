@@ -12,6 +12,6 @@ pub use crate::utils::server::VoyagerConfig;
 pub type AuthSession = axum_login::AuthSession<Backend>;
 /// The common result type used throughout
 /// Voyager, using Voyager's [`Error`].
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 /// Thread-safe app state, used across Voyager.
 pub type SharedAppState = std::sync::Arc<crate::utils::server::AppState>;

@@ -18,20 +18,23 @@ use nom::{
     sequence::{pair, preceded, terminated, tuple},
     IResult,
 };
+use std::str::FromStr;
 use tracing::{info, warn};
 
 // for documentation
 #[allow(unused_imports)]
 use crate::utils::level::{BranefuckProgram, DestroyValue, InputValue};
 
-impl ParsedTiles {
+impl FromStr for ParsedTiles {
+    type Err = Error;
+
     /// Attempts to parse the input as a valid sequence of tiles.
     ///
     /// # Errors
     /// Returns an error if any tile was invalid. This includes an invalid
     /// [`TileId`], an invalid [`TileType`], an invalid [`Multiplier`],
     /// or some other invalid input.
-    pub fn parse(input: &str) -> Result<Self> {
+    fn from_str(input: &str) -> Result<Self> {
         let (_, tiles) = all_consuming(many1(tuple((tile_id, tile_type, multiplier))))(input)
             .map_err(|why| {
                 warn!("{why}");
@@ -56,14 +59,15 @@ impl ParsedTiles {
     }
 }
 
-impl ParsedObjects {
+impl FromStr for ParsedObjects {
+    type Err = Error;
     /// Attempts to parse the input as a valid sequence of objects.
     ///
     /// # Errors
     /// Returns an error if any object was invalid. This includes an invalid
     /// [`ObjectId`], an invalid [`ObjectType`], an invalid [`Multiplier`],
     /// or some other invalid input.
-    pub fn parse(input: &str) -> Result<Self> {
+    fn from_str(input: &str) -> Result<Self> {
         let (_, objects) = all_consuming(many1(tuple((object_id, object_type, multiplier))))(input)
             .map_err(|why| {
                 warn!("{why}");
@@ -92,7 +96,7 @@ impl ParsedObjects {
 ///
 /// See [`TileId`] for all valid tile IDs.
 fn tile_id(input: &str) -> IResult<&str, TileId> {
-    map_res(take_while_m_n(2, 2, is_lowercase), TileId::try_from)(input)
+    map_res(take_while_m_n(2, 2, is_lowercase), TileId::from_str)(input)
 }
 
 /// Attempts to parse the input as an [`ObjectId`].
@@ -104,7 +108,7 @@ fn tile_id(input: &str) -> IResult<&str, TileId> {
 ///
 /// See [`ObjectId`] for details.
 fn object_id(input: &str) -> IResult<&str, ObjectId> {
-    map_res(take_while_m_n(2, 2, is_lowercase), ObjectId::try_from)(input)
+    map_res(take_while_m_n(2, 2, is_lowercase), ObjectId::from_str)(input)
 }
 
 /// Attempts to parse the input as an [`ObjectType`].

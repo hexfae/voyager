@@ -8,7 +8,7 @@ use axum::{
     extract::{ConnectInfo, Path, State},
     http::StatusCode,
 };
-use std::net::SocketAddr;
+use std::{net::SocketAddr, str::FromStr};
 use tracing::info;
 
 /// Returns a comma-separated list of all levels stored in the database.
@@ -54,7 +54,7 @@ pub async fn levels_exist(
     info!("GET levels check sent by {addr}: {input_keys_len} keys");
     let parsed_keys = split_keys
         .into_iter()
-        .filter_map(Key::parse)
+        .filter_map(|k| Key::from_str(k).ok())
         .collect::<Vec<Key>>();
     if parsed_keys.len() != input_keys_len {
         let invalid_keys_len = input_keys_len - parsed_keys.len();
