@@ -1,4 +1,8 @@
-//! The new, experimental parser for Endless Void tiles and objects.
+//! The new, experimental parser for
+//! [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)
+//! tiles and objects.
+//!
+//! [`parse_tiles`] and [`parse_objects`] are the main methods.
 
 use crate::prelude::*;
 
@@ -25,71 +29,64 @@ use tracing::{info, warn};
 #[allow(unused_imports)]
 use crate::utils::level::{BranefuckProgram, DestroyValue, InputValue};
 
-impl FromStr for ParsedTiles {
-    type Err = Error;
-
-    /// Attempts to parse the input as a valid sequence of tiles.
-    ///
-    /// # Errors
-    /// Returns an error if any tile was invalid. This includes an invalid
-    /// [`TileId`], an invalid [`TileType`], an invalid [`Multiplier`],
-    /// or some other invalid input.
-    fn from_str(input: &str) -> Result<Self> {
-        let (_, tiles) = all_consuming(many1(tuple((tile_id, tile_type, multiplier))))(input)
-            .map_err(|why| {
-                warn!("{why}");
-                Error::InvalidTiles
-            })?;
-        let tiles = Self(
-            tiles
-                .into_iter()
-                .map(|(id, tile_type, multiplier)| Tile {
-                    id,
-                    tile_type,
-                    multiplier,
-                })
-                .collect_vec(),
-        );
-        if tiles.to_string() != input {
-            warn!("mismatch!");
-            info!("input: {input}");
-            info!("recreated: {tiles}");
-        };
-        Ok(tiles)
-    }
+/// Attempts to parse the input as a valid sequence of tiles.
+///
+/// # Errors
+/// Returns an error if any tile was invalid. This includes an invalid
+/// [`TileId`], an invalid [`TileType`], an invalid [`Multiplier`],
+/// or some other invalid input.
+pub fn parse_tiles(input: &str) -> Result<ParsedTiles> {
+    let (_, tiles) =
+        all_consuming(many1(tuple((tile_id, tile_type, multiplier))))(input).map_err(|why| {
+            warn!("{why}");
+            Error::InvalidTiles
+        })?;
+    let tiles = ParsedTiles(
+        tiles
+            .into_iter()
+            .map(|(id, tile_type, multiplier)| Tile {
+                id,
+                tile_type,
+                multiplier,
+            })
+            .collect_vec(),
+    );
+    if tiles.to_string() != input {
+        warn!("mismatch!");
+        info!("input: {input}");
+        info!("recreated: {tiles}");
+    };
+    Ok(tiles)
 }
 
-impl FromStr for ParsedObjects {
-    type Err = Error;
-    /// Attempts to parse the input as a valid sequence of objects.
-    ///
-    /// # Errors
-    /// Returns an error if any object was invalid. This includes an invalid
-    /// [`ObjectId`], an invalid [`ObjectType`], an invalid [`Multiplier`],
-    /// or some other invalid input.
-    fn from_str(input: &str) -> Result<Self> {
-        let (_, objects) = all_consuming(many1(tuple((object_id, object_type, multiplier))))(input)
-            .map_err(|why| {
-                warn!("{why}");
-                Error::InvalidObjects
-            })?;
-        let objects = Self(
-            objects
-                .into_iter()
-                .map(|(id, object_type, multiplier)| Object {
-                    id,
-                    object_type,
-                    multiplier,
-                })
-                .collect_vec(),
-        );
-        if objects.to_string() != input {
-            warn!("mismatch!");
-            info!("input: {input}");
-            info!("recreated: {objects}");
-        };
-        Ok(objects)
-    }
+/// Attempts to parse the input as a valid sequence of objects.
+///
+/// # Errors
+/// Returns an error if any object was invalid. This includes an invalid
+/// [`ObjectId`], an invalid [`ObjectType`], an invalid [`Multiplier`],
+/// or some other invalid input.
+pub fn parse_objects(input: &str) -> Result<ParsedObjects> {
+    let (_, objects) = all_consuming(many1(tuple((object_id, object_type, multiplier))))(input)
+        .map_err(|why| {
+            warn!("{why}");
+            Error::InvalidObjects
+        })?;
+    let objects = ParsedObjects(
+        objects
+            .into_iter()
+            .map(|(id, object_type, multiplier)| Object {
+                id,
+                object_type,
+                multiplier,
+            })
+            .collect_vec(),
+    );
+    if objects.to_string() != input {
+        warn!("mismatch!");
+        info!("input: {input}");
+        info!("recreated: {objects}");
+    };
+    Ok(objects)
 }
 
 /// Attempts to parse the input as a [`TileId`].

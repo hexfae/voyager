@@ -38,6 +38,8 @@ use tracing::{debug, error, info, warn};
 
 // for documentation
 #[allow(unused_imports)]
+use crate::utils::parser;
+#[allow(unused_imports)]
 use crate::utils::{level::Data, routers::post::orphanage, routers::version::version};
 #[allow(unused_imports)]
 use base64::prelude::BASE64_STANDARD;
@@ -66,25 +68,22 @@ const DEFAULT_ALLOWED_SONGS: [&str; 18] = [
     "msc_test2",
 ];
 
-/// The default set of characters that are allowed as objects and tiles.
-///
-/// The characters allowed are [`BASE64_STANDARD`] and the Brainfuck symbols `+/=!<>-[]?` .
-pub const DEFAULT_ALLOWED_CHARACTERS: &str =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=!<>-[]?";
-
 /// The default format version used by Voyager.
 ///
-/// At the time of writing (2024-06-02), this is either `1` or `2`.
+/// At the time of writing (2024-06-25), this is either `1` or `2`.
 ///
 /// The only difference between these two versions is that version `2` allows Brainfuck symbols.
 const DEFAULT_FORMAT_VERSION: u8 = 2;
 
-/// The default latest version of Endless Void.
+/// The default latest version of
+/// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void).
 ///
-/// This is used to inform Endless Void users of new updates through [`version`].
+/// This is used to inform
+/// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)
+/// users of new updates through [`version`].
 ///
-/// As of 2024-06-02, this is `0.875`.
-const DEFAULT_ENDLESS_VOID_VERSION: &str = "0.875";
+/// As of 2024-06-25, this is `0.89`.
+const DEFAULT_ENDLESS_VOID_VERSION: &str = "0.89";
 
 /// Voyager's data and configuration.
 #[derive(Debug, Serialize, Deserialize)]
@@ -106,185 +105,77 @@ struct VoyagerData {
     banned_ips: DashSet<IpAddr>,
 }
 
-impl VoyagerData {
-    /// Attempts to load a Voyager database from `voyager/levels.db`.
-    ///
-    /// If reading the file fails (likely due to it not yet existing),
-    /// it instead creates a new one using `Self::default()`, which
-    /// creates an empty database.
-    ///
-    /// # Errors
-    /// - [`Error::Bincode`] if deserializing the file fails.
-    fn try_load() -> Result<Self> {
-        debug!("Database is opening...");
-        read("voyager/levels.db").map_or_else(
-            |_| {
-                info!("Existing database not found! One will be created.");
-                Ok(Self::default())
-            },
-            |bytes| {
-                debug!("Database opened. Database is loading...");
-                match bincode::deserialize(&bytes) {
-                    Err(why) => {
-                        error!("Database could not be loaded! {why}");
-                        Err(why.into())
-                    }
-                    Ok(data) => {
-                        info!("Database loaded: {data}.");
-                        Ok(data)
-                    }
-                }
-            },
-        )
-    }
-
-    /// Attempts to save itself to `voyager/levels.db`.
-    ///
-    /// If an error occurs, it will log a warning and keep running.
-    // it is really not that complex
-    #[allow(clippy::cognitive_complexity)]
-    pub fn save(&self) {
-        debug!("Database is serializing...");
-        match bincode::serialize(&self) {
-            Err(why) => warn!("Database could not be serialized! {why}"),
-            Ok(bytes) => {
-                let len = bytes.len();
-                debug!("Database serialized. Database is saving...");
-                match write("voyager/levels.db", bytes) {
-                    Ok(()) => debug!("Database saved. {len} bytes."),
-                    Err(why) => warn!("Database could not be saved! {why}"),
-                };
-            }
-        };
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Display)]
-#[display("{} allowed songs, format version {}, Endless Void version {}", allowed_songs.len(), format_version, endless_void_version)]
+#[derive(Debug, Default, Serialize, Deserialize, Display)]
+#[display("{} allowed songs, format version {}, Endless Void version {}", allowed_songs.0.len(), format_version, endless_void_version)]
 pub struct VoyagerConfig {
     /// All available music choices in Void Stranger.
     ///
     /// See [`DEFAULT_ALLOWED_SONGS`] for the default list.
-    pub allowed_songs: Vec<String>,
-    /// All possible characters from Endless Void's black hole format.
+    #[serde(default)]
+    pub allowed_songs: AllowedSongs,
+    /// The current highest format version used by
+    /// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void).
     ///
-    /// Currently, there is no (easy) way to check if a level is valid.
-    /// Therefore, this is the best (easiest) way to check a level's validity.
-    #[serde(default = "default_allowed_characters")]
-    pub allowed_characters: String,
-    /// The current highest format version used by Endless Void.
+    /// At the time of writing (2024-06-25), this is `2`.
+    #[serde(default)]
+    pub format_version: FormatVersion,
+    /// The version number of the current latest release of
+    /// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void).
     ///
-    /// At the time of writing (2024-05-14), this is `2`.
-    pub format_version: u8,
-    /// The version number of the current latest release of Endless Void.
-    ///
-    /// At the time of writing (2024-05-14), this is `0.875`.
-    pub endless_void_version: String,
+    /// At the time of writing (2024-06-25), this is `0.89`.
+    #[serde(default)]
+    pub endless_void_version: EndlessVoidVersion,
 }
 
-// this function is just needed as a default for allowed_characters of VoyagerConfig
-fn default_allowed_characters() -> String {
-    DEFAULT_ALLOWED_CHARACTERS.into()
-}
+/// The list of allowed songs.
+///
+/// See [`DEFAULT_ALLOWED_SONGS`] for the list of defaults.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AllowedSongs(pub Vec<String>);
 
-impl VoyagerConfig {
-    /// Attempts to save itself to `voyager/config.ron`.
-    ///
-    /// If an error occurs, it will log a warning and keep running.
-    // it is really not that complex
-    #[allow(clippy::cognitive_complexity)]
-    pub fn save(&self) {
-        debug!("Config is serializing...");
-        match ron::ser::to_string_pretty(&self, PrettyConfig::default()) {
-            Err(why) => warn!("Config could not be serialized! {why}"),
-            Ok(string) => {
-                debug!("Config serialized. Config is saving...");
-                let len = string.len();
-                match write("voyager/config.ron", string) {
-                    Ok(()) => debug!("Config saved. {len} bytes."),
-                    Err(why) => warn!("Config could not be saved! {why}"),
-                };
-            }
-        };
-    }
+/// The latest level format version.
+///
+/// See [`DEFAULT_FORMAT_VERSION`] for the default.
+#[derive(Debug, Serialize, Deserialize, Display)]
+pub struct FormatVersion(pub u8);
 
-    /// Attempts to load a Voyager config from `voyager/config.ron`.
-    ///
-    /// If it fails (likely due to it not yet existing), it
-    /// instead creates a new one using `Self::default()`,
-    /// which will use a set of at-the-time correct defaults.
-    ///
-    /// # Errors
-    /// Returns an error if a Voyager config is found, but
-    /// deserializing it fails. Most likely, some data structure
-    /// had a breaking change (or the file is corrupted).
-    pub fn try_load() -> Result<Self> {
-        debug!("Config is opening...");
-        read_to_string("voyager/config.ron").map_or_else(
-            |_| {
-                info!("Existing config not found! One will be created.");
-                let config = Self::default();
-                config.save();
-                Ok(config)
-            },
-            |string| {
-                debug!("Config opened. Config is loading...");
-                match ron::from_str::<Self>(&string) {
-                    Err(why) => {
-                        error!("Config could not be loaded! {why}");
-                        Err(why.into())
-                    }
-                    Ok(config) => {
-                        info!("Config loaded: {config}.");
-                        config.save();
-                        Ok(config)
-                    }
-                }
-            },
-        )
-    }
+/// The latest
+/// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)
+/// version.
+///
+/// See [`DEFAULT_ENDLESS_VOID_VERSION`] for the default.
+#[derive(Debug, Serialize, Deserialize, Display, Clone)]
+pub struct EndlessVoidVersion(pub String);
 
-    /// Attempts to load a Voyager config from `voyager/config.ron`.
+/// The old, legacy, deprecated, etc. Voyager config.
+///
+/// The reason why this exists is because I originally thought that the config
+/// would be simple enough as to not need to use the newtype pattern. Maybe so,
+/// but I've later decided that I do actually want to use it. Since RON doesn't
+/// allow you to #[serde(flatten)] newtype structs, this has to exist to convert
+/// from the old config to the new one using the newtype pattern.
+#[derive(Deserialize)]
+struct LegacyVoyagerConfig {
+    /// The list of allowed songs.
     ///
-    /// This function is used for hot reloading the config
-    /// while Voyager is running.
+    /// See [`DEFAULT_ALLOWED_SONGS`] for the list of defaults.
+    allowed_songs: Vec<String>,
+    /// The list of allowed characters for tiles and objects.
     ///
-    /// If it fails (likely due to the configuration being
-    /// changed to something invalid), it logs it and keeps
-    /// running without switching to the new config.
-    pub fn try_reload() -> Option<Self> {
-        debug!("Config is opening for hot reload...");
-        read_to_string("voyager/config.ron").map_or_else(
-            |why| {
-                warn!("Config could not be opened for hot reload! {why}");
-                None
-            },
-            |string| {
-                debug!("Config opened. Config is loading...");
-                match ron::from_str(&string) {
-                    Err(why) => {
-                        warn!("Config could not be loaded! {why}");
-                        None
-                    }
-                    Ok(config) => {
-                        info!("Config reloaded: {config}");
-                        Some(config)
-                    }
-                }
-            },
-        )
-    }
-}
-
-impl Default for VoyagerConfig {
-    fn default() -> Self {
-        Self {
-            allowed_songs: DEFAULT_ALLOWED_SONGS.map(ToString::to_string).to_vec(),
-            allowed_characters: DEFAULT_ALLOWED_CHARACTERS.into(),
-            format_version: DEFAULT_FORMAT_VERSION,
-            endless_void_version: DEFAULT_ENDLESS_VOID_VERSION.into(),
-        }
-    }
+    /// This is deprecated. Since Voyager 0.9.0, a new, more sophisticated parser
+    /// is used to validate a level's tiles and objects. Therefore, this is no
+    /// longer needed. See [`parser`] for the new parser.
+    #[allow(dead_code)] // deprecated field
+    allowed_characters: String,
+    /// The latest level format version.
+    ///
+    /// See [`DEFAULT_FORMAT_VERSION`] for the default.
+    format_version: u8,
+    /// The latest version of
+    /// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void).
+    ///
+    /// See [`DEFAULT_ENDLESS_VOID_VERSION`] for the default.
+    endless_void_version: String,
 }
 
 impl AppState {
@@ -431,8 +322,9 @@ impl AppState {
         self.data.levels.len()
     }
 
-    /// Returns a comma-separated list of all stored levels
-    /// in Endless Void's level format.
+    /// Returns a comma-separated list of all stored levels in
+    /// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)'s
+    /// level format.
     ///
     /// See [`Data`] for details on level format.
     #[must_use]
@@ -460,6 +352,197 @@ impl AppState {
             .filter_map(|level| level.into_parsed(&self.config.read()).ok())
             .map(IndexLevel::new)
             .collect()
+    }
+}
+
+impl VoyagerData {
+    /// Attempts to load a Voyager database from `voyager/levels.db`.
+    ///
+    /// If reading the file fails (likely due to it not yet existing),
+    /// it instead creates a new one using `Self::default()`, which
+    /// creates an empty database.
+    ///
+    /// # Errors
+    /// - [`Error::Bincode`] if deserializing the file fails.
+    fn try_load() -> Result<Self> {
+        debug!("Database is opening...");
+        read("voyager/levels.db").map_or_else(
+            |_| {
+                info!("Existing database not found! One will be created.");
+                Ok(Self::default())
+            },
+            |bytes| {
+                debug!("Database opened. Database is loading...");
+                match bincode::deserialize(&bytes) {
+                    Err(why) => {
+                        error!("Database could not be loaded! {why}");
+                        Err(why.into())
+                    }
+                    Ok(data) => {
+                        info!("Database loaded: {data}.");
+                        Ok(data)
+                    }
+                }
+            },
+        )
+    }
+
+    /// Attempts to save itself to `voyager/levels.db`.
+    ///
+    /// If an error occurs, it will log a warning and keep running.
+    // it is really not that complex
+    #[allow(clippy::cognitive_complexity)]
+    pub fn save(&self) {
+        debug!("Database is serializing...");
+        match bincode::serialize(&self) {
+            Err(why) => warn!("Database could not be serialized! {why}"),
+            Ok(bytes) => {
+                let len = bytes.len();
+                debug!("Database serialized. Database is saving...");
+                match write("voyager/levels.db", bytes) {
+                    Ok(()) => debug!("Database saved. {len} bytes."),
+                    Err(why) => warn!("Database could not be saved! {why}"),
+                };
+            }
+        };
+    }
+}
+
+impl VoyagerConfig {
+    /// Attempts to save itself to `voyager/config.ron`.
+    ///
+    /// If an error occurs, it will log a warning and keep running.
+    // it is really not that complex
+    #[allow(clippy::cognitive_complexity)]
+    pub fn save(&self) {
+        debug!("Config is serializing...");
+        match ron::ser::to_string_pretty(&self, PrettyConfig::default()) {
+            Err(why) => warn!("Config could not be serialized! {why}"),
+            Ok(string) => {
+                debug!("Config serialized. Config is saving...");
+                let len = string.len();
+                match write("voyager/config.ron", string) {
+                    Ok(()) => debug!("Config saved. {len} bytes."),
+                    Err(why) => warn!("Config could not be saved! {why}"),
+                };
+            }
+        };
+    }
+
+    /// Attempts to load a Voyager config from `voyager/config.ron`.
+    ///
+    /// If it fails (likely due to it not yet existing), it
+    /// instead creates a new one using `Self::default()`,
+    /// which will use a set of at-the-time correct defaults.
+    ///
+    /// # Errors
+    /// Returns an error if a Voyager config is found, but
+    /// deserializing it fails. Most likely, some data structure
+    /// had a breaking change (or the file is corrupted).
+    pub fn try_load() -> Result<Self> {
+        debug!("Config is opening...");
+        read_to_string("voyager/config.ron").map_or_else(
+            |_| {
+                info!("Existing config not found! One will be created.");
+                let config = Self::default();
+                config.save();
+                Ok(config)
+            },
+            |string| {
+                debug!("Config opened. Config is loading...");
+                ron::from_str::<Self>(&string).map_or_else(
+                    // TODO: remove
+                    #[allow(clippy::cognitive_complexity)]
+                    |_| {
+                        debug!("Config could not be loaded. Trying legacy...");
+                        match ron::from_str::<LegacyVoyagerConfig>(&string) {
+                            Err(why) => {
+                                error!("Config could not be loaded! {why}");
+                                Err(why.into())
+                            }
+                            Ok(legacy) => {
+                                info!("Legacy config loaded. Converting...");
+                                let config = Self::from(legacy);
+                                info!("Config converted. {config}");
+                                config.save();
+                                Ok(config)
+                            }
+                        }
+                    },
+                    |config| {
+                        info!("Config loaded: {config}.");
+                        config.save();
+                        Ok(config)
+                    },
+                )
+            },
+        )
+    }
+
+    /// Attempts to load a Voyager config from `voyager/config.ron`.
+    ///
+    /// This function is used for hot reloading the config
+    /// while Voyager is running.
+    ///
+    /// If it fails (likely due to the configuration being
+    /// changed to something invalid), it logs it and keeps
+    /// running without switching to the new config.
+    pub fn try_reload() -> Option<Self> {
+        debug!("Config is opening for hot reload...");
+        read_to_string("voyager/config.ron").map_or_else(
+            |why| {
+                warn!("Config could not be opened for hot reload! {why}");
+                None
+            },
+            |string| {
+                debug!("Config opened. Config is loading...");
+                match ron::from_str(&string) {
+                    Err(why) => {
+                        warn!("Config could not be loaded! {why}");
+                        None
+                    }
+                    Ok(config) => {
+                        info!("Config reloaded: {config}");
+                        Some(config)
+                    }
+                }
+            },
+        )
+    }
+}
+
+impl From<LegacyVoyagerConfig> for VoyagerConfig {
+    fn from(input: LegacyVoyagerConfig) -> Self {
+        Self {
+            allowed_songs: AllowedSongs(input.allowed_songs),
+            format_version: FormatVersion(input.format_version),
+            endless_void_version: EndlessVoidVersion(input.endless_void_version),
+        }
+    }
+}
+
+impl AllowedSongs {
+    /// Returns `true` if the song is in the list of allowed songs.
+    pub fn contains(&self, input: impl AsRef<str>) -> bool {
+        self.0.iter().any(|s| s == input.as_ref())
+    }
+}
+
+impl Default for AllowedSongs {
+    fn default() -> Self {
+        Self(DEFAULT_ALLOWED_SONGS.map(ToString::to_string).to_vec())
+    }
+}
+
+impl Default for FormatVersion {
+    fn default() -> Self {
+        Self(DEFAULT_FORMAT_VERSION)
+    }
+}
+
+impl Default for EndlessVoidVersion {
+    fn default() -> Self {
+        Self(DEFAULT_ENDLESS_VOID_VERSION.into())
     }
 }
 

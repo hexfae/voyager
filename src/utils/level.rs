@@ -2,6 +2,8 @@
 //! and [`Validated`] states, and related constants.
 
 use crate::prelude::*;
+
+use crate::utils::parser::{parse_objects, parse_tiles};
 use base64::{prelude::BASE64_STANDARD, Engine};
 use bitvec::order::Lsb0;
 use bitvec::view::BitView;
@@ -13,9 +15,6 @@ use std::{convert::Infallible, io::Cursor, marker::PhantomData, net::IpAddr, str
 use time::OffsetDateTime;
 use tracing::warn;
 use ulid::Ulid;
-
-#[allow(unused_imports)]
-use crate::utils::server::DEFAULT_ALLOWED_CHARACTERS;
 
 /// A level's name's max length.
 pub const MAX_NAME_LEN: usize = 30;
@@ -47,7 +46,7 @@ pub const BURDENS_4_BITS: u8 = 0b1111;
 /// See [Endless Void's page on Branefuck](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck) for details.
 const BRANEFUCK_CHARACTERS: &str = "<>+-.[]?1234567890";
 
-/// A tile, as represented by Endless Void.
+/// A tile, as represented by [Endless Void](https://github.com/Skirlez/void-stranger-endless-void).
 ///
 /// Tiles are typically static pieces of the environment, such as walls, floors,
 /// and pits. However, they may also be bombs, the exit, a floor switch, or
@@ -74,7 +73,7 @@ pub struct Tile {
     pub multiplier: Option<Multiplier>,
 }
 
-/// An object, as represented by Endless Void.
+/// An object, as represented by [Endless Void](https://github.com/Skirlez/void-stranger-endless-void).
 ///
 /// The list of objects is comprised mainly of enemies and statues. However, 2
 /// notable exceptions are the player and the secret exit.
@@ -318,7 +317,8 @@ pub enum ObjectType {
 ///
 /// Multipliers are prefixed with `X`. They represent how many times a
 /// tile or object is repeated in a row. For example, instead of `flflflflfl`,
-/// Endless Void encodes 5 floor tiles in a row as `flX5`.
+/// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)
+/// encodes 5 floor tiles in a row as `flX5`.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 #[display("X{_0}")] // X prefix, e.g. 9 -> X9
 pub struct Multiplier(pub u8);
@@ -355,12 +355,13 @@ pub enum Direction {
 
 /// All valid input values for Add statues.
 ///
-/// Valid inputs are any number, any Endless Void global variable, and
-/// any vanilla global variable.
+/// Valid inputs are any number, any
+/// [Endless Void global variable](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck#input-variables),
+/// and any vanilla global variable.
 ///
-/// These are all of the global variables Endless Void introduced. Since I
-/// haven't yet decompiled the game to check the vanilla global variables,
-/// the [`InputValue::Unknown`] variant wraps a [`String`].
+/// Listed are [all of the global variables Endless Void introduced](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck#input-variables).
+/// Since I haven't yet decompiled the game to check the vanilla global
+/// variables, the [`InputValue::Unknown`] variant wraps a [`String`].
 ///
 /// See [Endless Void's page on Branefuck](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck)
 /// for details.
@@ -450,9 +451,11 @@ pub enum InputValue {
     Unknown(String),
 }
 
-/// A branefuck program.
+/// A [Branefuck program](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck).
 ///
-/// Add statues are able to run Branefuck programs in Endless Void.
+/// Add statues are able to run
+/// [Branefuck programs](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck)
+/// in [Endless Void](https://github.com/Skirlez/void-stranger-endless-void).
 ///
 /// See [`BRANEFUCK_CHARACTERS`] for details on valid characters.
 ///
@@ -462,9 +465,10 @@ pub struct BranefuckProgram(String);
 
 /// An add statue's destroy value.
 ///
-/// Add statues may take in a Branefuck program and a destroy value.
-/// When the program's output matches the set destroy value, the Add
-/// statue will be destroyed.
+/// Add statues may take in a
+/// [Branefuck program](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck)
+/// and a destroy value. When the program's output matches the set
+/// destroy value, the Add statue will be destroyed.
 ///
 /// See [Endless Void's page on Branefuck](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck) for further details.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
@@ -551,7 +555,8 @@ pub struct Parsed {
     pub uploader: IpAddr,
 }
 
-/// A level's data, as sent to Endless Void.
+/// A level's data, as sent to
+/// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void).
 ///
 /// The format is as follows:
 ///
@@ -559,14 +564,16 @@ pub struct Parsed {
 ///
 /// `version|name|description|music|author|brand|uploaded|edited|burdens|tiles|objects`
 ///
-/// Note that a POST request from Endless Void will omit the
-/// Uploaded and Edited fields, but keep the separators:
+/// Note that a POST request from
+/// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)
+/// will omit the [`Uploaded`] and [`Edited`] fields, but keep the separators:
 ///
 /// `1|Zm9v|YmFy|bXNjXzAwMQ==|aGV4ZmFl|2685020332|||0|ptX33exptX11flX2ptX10flX2ptX10flX2ptX33|emX61plemX62`
 ///
 /// `version|name|description|music|author|brand|||burdens|tiles|objects`
 ///
-/// And a PUT request will do the same, but append a separator and a ULID key:
+/// And a PUT request will do the same, but append a separator and a
+/// [ULID](https://github.com/ulid/spec) key:
 ///
 /// `1|Zm9v|YmFy|bXNjXzAwMQ==|aGV4ZmFl|2685020332|||0|ptX33exptX11flX2ptX10flX2ptX10flX2ptX33|emX61plemX62|01HR55PKF2BYRT1210Q67M8J34`
 ///
@@ -605,7 +612,7 @@ pub struct Validated;
 
 /// The level's format version.
 ///
-/// At the time of writing (2024-06-02), this is 1 or 2.
+/// At the time of writing (2024-06-25), this is 1 or 2.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Version(u8);
 
@@ -642,12 +649,14 @@ pub struct Author(String);
 /// Brand is a 6x6 grid consisting of either white or
 /// black pixels. As such, the brand is encoded as 36
 /// bits, and is therefore stored as a u64 in Voyager
-/// and sent to/from Endless Void as a base 10 integer.
+/// and sent to/from
+/// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)
+/// as a decimal integer.
 ///
 /// The pixels/bits are stored in least significant order.
 /// For example, a brand with the first 4 pixels white and
 /// the rest black would be represented in Voyager as a u64
-/// with 60 0's followed by 4 1's in binary, or 15 in base 10.
+/// with 60 0's followed by 4 1's in binary, or 15 in decimal.
 ///
 /// See [`BRAND_36_BITS`] for the biggest brand possible (a
 /// completely white 6x6 grid).
@@ -678,7 +687,9 @@ pub struct Edited(String);
 /// in-game. There are 4 possible burdens which may all be
 /// independently toggled on or off. As such, the burdens can
 /// be encoded as 4 bits, and are therefore stored as a u8 in
-/// Voyager and sent to/from Endless Void as a base-10 integer.
+/// Voyager and sent to/from
+/// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)
+/// as a decimal integer.
 ///
 /// See [`BURDENS_4_BITS`] for the biggest value possible.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
@@ -686,11 +697,10 @@ pub struct Burdens(u8);
 
 /// The level's (unparsed) tiles.
 ///
-/// Encoded in Endless Void's black hole format. See
-/// [`VoyagerConfig`] or [`DEFAULT_ALLOWED_CHARACTERS`]
-/// for a list of default allowed characters.
-///
-/// Check Endless Void's documentation for more details.
+/// Encoded in [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)'s
+/// black hole format. See [`ParsedTiles::from_str`] or
+/// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)'s
+/// documentation for more details.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Tiles(String);
 
@@ -702,11 +712,10 @@ pub struct ParsedTiles(pub Vec<Tile>);
 
 /// The level's (unparsed) objects.
 ///
-/// Encoded in Endless Void's black hole format. See
-/// [`VoyagerConfig`] or [`DEFAULT_ALLOWED_CHARACTERS`]
-/// for a list of default allowed characters.
-///
-/// Check Endless Void's documentation for more details.
+/// Encoded in [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)'s
+/// black hole format. See [`ParsedObjects::from_str`] or
+/// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)'s
+/// documentation for more details.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Objects(String);
 
@@ -1099,12 +1108,12 @@ impl Version {
         let version = input
             .parse::<u8>()
             .map_err(|why| Error::InvalidVersion(NumberError::NotANumber(why)))?;
-        let too_big = version > config.format_version;
+        let too_big = version > config.format_version.0;
         let is_zero = version == 0;
 
         if too_big {
             return Err(Error::InvalidVersion(NumberError::TooBig {
-                max: u64::from(config.format_version),
+                max: u64::from(config.format_version.0),
                 found: u64::from(version),
             }));
         }
@@ -1284,6 +1293,20 @@ impl FromStr for Tiles {
     }
 }
 
+impl FromStr for ParsedTiles {
+    type Err = Error;
+
+    /// Attempts to parse the input as a valid sequence of tiles.
+    ///
+    /// # Errors
+    /// Returns an error if any tile was invalid. This includes an invalid
+    /// [`TileId`], an invalid [`TileType`], an invalid [`Multiplier`],
+    /// or some other invalid input.
+    fn from_str(input: &str) -> Result<Self> {
+        parse_tiles(input)
+    }
+}
+
 impl FromStr for Objects {
     type Err = Infallible;
 
@@ -1300,6 +1323,19 @@ impl FromStr for Objects {
             warn!("error while parsing objects: {why}");
         };
         Ok(Self(input.to_string()))
+    }
+}
+
+impl FromStr for ParsedObjects {
+    type Err = Error;
+    /// Attempts to parse the input as a valid sequence of objects.
+    ///
+    /// # Errors
+    /// Returns an error if any object was invalid. This includes an invalid
+    /// [`ObjectId`], an invalid [`ObjectType`], an invalid [`Multiplier`],
+    /// or some other invalid input.
+    fn from_str(input: &str) -> Result<Self> {
+        parse_objects(input)
     }
 }
 

@@ -25,7 +25,7 @@ pub enum Error {
     /// POST and PUT: The format version was invalid.
     ///
     /// Either it was not a number, was too small (<1), or was
-    /// too big. At the time of writing (2024-05-14), the
+    /// too big. At the time of writing (2024-06-25), the
     /// highest format version is 2.
     #[error("invalid format version: {0}")]
     InvalidVersion(NumberError),
@@ -87,12 +87,14 @@ pub enum Error {
     /// GET, POST, PUT, DELETE: The key was valid, but a matching
     /// level was not found.
     ///
-    /// For GET, this is the level check that Endless Void does on startup
-    /// (checking that all stored keys are in the Voyager database). For
-    /// POST, this is the anti-orphan check that Endless Void does soon
-    /// after sending a level upload request, to make sure that the client
-    /// received the key (to prevent orphan levels in the database). For PUT
-    /// and DELETE, this is simply if the database has no matching level.
+    /// For GET, this is the level check that
+    /// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)
+    /// does on startup (checking that all stored keys are in the Voyager
+    /// database). For POST, this is the anti-orphan check that
+    /// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)
+    /// does soon after sending a level upload request, to make sure that the
+    /// client received the key (to prevent orphan levels in the database). For
+    /// PUT and DELETE, this is simply if the database has no matching level.
     #[error("level not found")]
     LevelNotFound,
     /// The user has been banned.
