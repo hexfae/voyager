@@ -8,15 +8,6 @@ use bitvec::view::BitView;
 use derive_more::Display;
 use image::{ImageBuffer, ImageFormat, Rgb};
 use itertools::Itertools;
-use nom::{
-    branch::alt,
-    bytes::complete::{tag, take, take_until1, take_while, take_while_m_n},
-    character::complete::char,
-    combinator::map_res,
-    multi::{count, many1},
-    sequence::{preceded, terminated, tuple},
-    IResult,
-};
 use serde::{Deserialize, Serialize};
 use std::{io::Cursor, marker::PhantomData, net::IpAddr, str::FromStr};
 use time::OffsetDateTime;
@@ -45,55 +36,521 @@ pub const BRAND_36_BITS: u64 = 0b1111_1111_1111_1111_1111_1111_1111_1111_1111;
 /// Equal to 2^4-1 or 15.
 pub const BURDENS_4_BITS: u8 = 0b1111;
 
-const ALLOWED_TILES: &[&str; 18] = &[
-    "pt", // pit
-    "fl", // floor
-    "gl", // glass
-    "mn", // bomb
-    "xp", // lit bomb
-    "fs", // floor switch
-    "cr", // copy floor
-    "ex", // exit
-    "df", // death floor
-    "bl", // black floor
-    "wh", // blank/empty/white floor/tile
-    "wa", // wall
-    "mw", // mon/funhouse wall
-    "dw", // DIS wall
-    "ew", // EX wall
-    "ed", // edge
-    "de", // DIS edge
-    "st", // small chest
-];
+/// All of the valid Branefuck characters.
+///
+/// These are the standard Brainfuck characters, minus `,`
+/// (input is instead given in the level editor's UI), plus
+/// `?` (returns a number corresponding to the sign of the
+/// current cell's number), plus all decimal digits (since
+/// they may be used as multipliers, e.g. `+5` instead of `+++++`).
+///
+/// See [Endless Void's page on Branefuck](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck) for details.
+const BRANEFUCK_CHARACTERS: &str = "<>+-.[]?1234567890";
 
-const ALLOWED_OBJECTS: &[&str; 26] = &[
-    "em", // empty
-    "pl", // player
-    "cl", // leech
-    "cc", // maggot
-    "cg", // bull/beaver
-    "cs", // gobbler/smile
-    "ch", // hand/eye
-    "cm", // mimic
-    "co", // diamond/octahedron
-    "hu", // hungry/famished man
-    "ad", // add statue
-    "cf", // cif statue
-    "be", // bee statue
-    "tn", // tan statue
-    "lv", // lev statue
-    "mo", // mon statue
-    "eu", // eus statue
-    "go", // gor statue
-    "jb", // jukebox
-    "eg", // egg
-    "ho", // hologram
-    "mm", // memory crystal
-    "se", // secret exit
-    "ct", // spider
-    "sd", // scaredeer
-    "cv", // orb thing
-];
+/// A tile, as represented by Endless Void.
+///
+/// Tiles are typically static pieces of the environment, such as walls, floors,
+/// and pits. However, they may also be bombs, the exit, a floor switch, or
+/// anything else found in [`TileId`].
+///
+/// A tile is encoded as `id[type][multiplier]`. For example, a pit is `pt`. A
+/// wall of type 3 is `wa03`. Floor repeated 7 times is `flX7`. A wall of type
+/// 3 repeated 4 times is `wa03X4`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Tile {
+    /// This tile's id.
+    ///
+    /// See [`TileId`] for details.
+    pub id: TileId,
+    /// This tile's (optional) type.
+    ///
+    /// See [`TileType`] for details.
+    // type is a reserved name, and typing r#type is ugly
+    #[allow(clippy::struct_field_names)]
+    pub tile_type: Option<TileType>,
+    /// This tile's (optional) multiplier.
+    ///
+    /// See [`Multiplier`] for details.
+    pub multiplier: Option<Multiplier>,
+}
+
+/// An object, as represented by Endless Void.
+///
+/// The list of objects is comprised mainly of enemies and statues. However, 2
+/// notable exceptions are the player and the secret exit.
+///
+/// An object is encoded as `id[type][multiplier]`. For example, the player is `pl`.
+/// A wall of type 3 is `wa03`. Floor repeated 7 times is `flX7`. A wall of type
+/// 3 repeated 4 times is `wa03X4`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Object {
+    /// This object's id.
+    ///
+    /// See [`ObjectId`] for details.
+    pub id: ObjectId,
+    /// This object's (optional) type.
+    ///
+    /// See [`ObjectType`] for details.
+    // type is a reserved name, and typing r#type is ugly
+    #[allow(clippy::struct_field_names)]
+    pub object_type: Option<ObjectType>,
+    /// This objects's (optional) multiplier.
+    ///
+    /// See [`Multiplier`] for details.
+    pub multiplier: Option<Multiplier>,
+}
+
+/// All valid tile IDs.
+///
+/// Every ID is encoded as 2 lowercase characters, e.g. `wa` means wall.
+#[non_exhaustive]
+#[derive(Debug, Display, Clone, Serialize, Deserialize)]
+pub enum TileId {
+    /// Encoded as `pt`.
+    #[display("pt")]
+    Pit,
+    /// Encoded as `fl`.
+    #[display("fl")]
+    Floor,
+    /// Encoded as `gl`.
+    #[display("gl")]
+    Glass,
+    /// Encoded as `mn`.
+    #[display("mn")]
+    Bomb,
+    /// Encoded as `xp`.
+    #[display("xp")]
+    LitBomb,
+    /// Encoded as `fs`.
+    #[display("fs")]
+    FloorSwitch,
+    /// Encoded as `cr`.
+    #[display("cr")]
+    CopyFloor,
+    /// Encoded as `ex`.
+    #[display("ex")]
+    Exit,
+    /// Encoded as `df`.
+    #[display("df")]
+    DeathFloor,
+    /// Encoded as `bl`.
+    #[display("bl")]
+    BlackFloor,
+    /// Encoded as `wh`.
+    #[display("wh")]
+    BlankFloor,
+    /// Encoded as `wa`.
+    #[display("wa")]
+    Wall,
+    /// Encoded as `mw`.
+    #[display("mw")]
+    FunhouseWall,
+    /// Encoded as `dw`.
+    #[display("dw")]
+    DISWall,
+    /// Encoded as `ew`.
+    #[display("ew")]
+    EXWall,
+    /// Encoded as `ed`.
+    #[display("ed")]
+    Edge,
+    /// Encoded as `de`.
+    #[display("de")]
+    DISEdge,
+    /// Encoded as `st`.
+    #[display("st")]
+    SmallChest,
+}
+
+/// All valid object IDs.
+///
+/// Every ID is encoded as 2 lowercase characters, e.g. `pl` means player.
+#[derive(Debug, Display, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum ObjectId {
+    /// Encoded as `em`.
+    #[display("em")]
+    Empty,
+    /// Encoded as `pl`.
+    #[display("pl")]
+    Player,
+    /// Encoded as `cl`.
+    #[display("cl")]
+    Leech,
+    /// Encoded as `cc`.
+    #[display("cc")]
+    Maggot,
+    /// Encoded as `cg`.
+    #[display("cg")]
+    Beaver,
+    /// Encoded as `cs`.
+    #[display("cs")]
+    Smile,
+    /// Encoded as `ch`.
+    #[display("ch")]
+    Eye,
+    /// Encoded as `cm`.
+    #[display("cm")]
+    Mimic,
+    /// Encoded as `co`.
+    #[display("co")]
+    Octahedron,
+    /// Encoded as `hu`.
+    #[display("hu")]
+    FamishedMan,
+    /// Encoded as `ad`.
+    #[display("ad")]
+    AddStatue,
+    /// Encoded as `cf`.
+    #[display("cf")]
+    CifStatue,
+    /// Encoded as `be`.
+    #[display("be")]
+    BeeStatue,
+    /// Encoded as `tn`.
+    #[display("tn")]
+    TanStatue,
+    /// Encoded as `lv`.
+    #[display("lv")]
+    LevStatue,
+    /// Encoded as `mo`.
+    #[display("mo")]
+    MonStatue,
+    /// Encoded as `eu`.
+    #[display("eu")]
+    EusStatue,
+    /// Encoded as `go`.
+    #[display("go")]
+    GorStatue,
+    /// Encoded as `jb`.
+    #[display("jb")]
+    Jukebox,
+    /// Encoded as `eg`.
+    #[display("eg")]
+    Egg,
+    /// Encoded as `ho`.
+    #[display("ho")]
+    FakeEgg,
+    /// Encoded as `mm`.
+    #[display("mm")]
+    MemoryCrystal,
+    /// Encoded as `se`.
+    #[display("se")]
+    SecretExit,
+    /// Encoded as `ct`.
+    #[display("ct")]
+    Spider,
+    /// Encoded as `sd`.
+    #[display("sd")]
+    Scaredeer,
+    /// Encoded as `cv`.
+    #[display("cv")]
+    OrbThing,
+}
+
+/// A tile's (optional) type.
+///
+/// Types are encoded as a decimal number, and are always padded to
+/// 2 digits, e.g. `9` becomes `09`.
+///
+/// Two example of tiles with a type are walls (corners, orientation).
+/// and small chests (loot).
+#[derive(Debug, Display, Clone, Serialize, Deserialize)]
+#[display("{_0:02}")] // padded, e.g. 9 -> 09
+pub struct TileType(pub u8);
+
+/// An object's type.
+///
+/// There are 4 different types of object types, see
+/// their respective documentation for details:
+/// 1. [`Self::Direction`]
+/// 2. [`Self::AddStatue1`]
+/// 3. [`Self::AddStatue2`]
+/// 4. [`Self::Egg`]
+///
+/// Note: An enemy with a direction of up (e.g. `ct0`)
+/// will get its type parsed as [`ObjectType::Egg`] with 0
+/// messages, instead of [`ObjectType::Direction`] with
+/// [`Direction::Up`]. This is fine, however, because both
+/// will be encoded as `0`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ObjectType {
+    /// This object's [`Direction`].
+    Direction {
+        /// See [`Direction`].
+        direction: Direction,
+    },
+    /// A type 1 Add statue's parameters.
+    ///
+    /// This takes in a [`InputValue`] and a [`DestroyValue`],
+    /// see their documentation for details.
+    AddStatue1 {
+        /// See [`InputValue`].
+        first_input: InputValue,
+        /// See [`DestroyValue`].
+        destroy_value: DestroyValue,
+    },
+    /// A type 2 Add statue's parameters.
+    ///
+    /// This takes in 2 [`InputValue`]s, a [`DestroyValue`], and a
+    /// [`BranefuckProgram `] program. See their documentation for details.
+    AddStatue2 {
+        /// See [`InputValue`].
+        first_input: InputValue,
+        /// See [`InputValue`].
+        second_input: InputValue,
+        /// See [`DestroyValue`].
+        destroy_value: DestroyValue,
+        /// See [`BranefuckProgram`].
+        branefuck: BranefuckProgram,
+    },
+    /// An egg's messages.
+    ///
+    /// An egg has a list of messages that will be displayed when interacted with (?). The
+    /// length may be (and is often) 0. The longest length found in the wild is 4 (the max?).
+    Egg {
+        /// See [`Message`].
+        messages: Vec<Message>,
+    },
+}
+
+/// A tile's (optional) multiplier.
+///
+/// Multipliers are prefixed with `X`. They represent how many times a
+/// tile or object is repeated in a row. For example, instead of `flflflflfl`,
+/// Endless Void encodes 5 floor tiles in a row as `flX5`.
+#[derive(Debug, Display, Clone, Serialize, Deserialize)]
+#[display("X{_0}")] // X prefix, e.g. 9 -> X9
+pub struct Multiplier(pub u8);
+
+/// An egg's message.
+///
+/// See [`ObjectType::Egg`] for details.
+#[derive(Debug, Display, Clone, Serialize, Deserialize)]
+pub struct Message(pub String);
+
+/// An object's direction.
+///
+/// Encoded as a number between `0` and `3`. I currently don't
+/// know exactly which number corresponds to which direction
+/// (this isn't very important for writing a parser).
+///
+/// This is only used for enemies, as far as I can tell.
+#[derive(Debug, Display, Clone, Serialize, Deserialize)]
+pub enum Direction {
+    // TODO: what are the actual directions?
+    /// Up. Unknown encoding, temporarily `0`.
+    #[display("0")]
+    Up,
+    /// Down. Unknown encoding, temporarily `1`.
+    #[display("1")]
+    Down,
+    /// Left. Unknown encoding, temporarily `2`.
+    #[display("2")]
+    Left,
+    /// Right. Unknown encoding, temporarily `3`.
+    #[display("3")]
+    Right,
+}
+
+/// All valid input values for Add statues.
+///
+/// Valid inputs are any number, any Endless Void global variable, and
+/// any vanilla global variable.
+///
+/// These are all of the global variables Endless Void introduced. Since I
+/// haven't yet decompiled the game to check the vanilla global variables,
+/// the [`InputValue::Unknown`] variant wraps a [`String`].
+///
+/// See [Endless Void's page on Branefuck](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck)
+/// for details.
+#[derive(Debug, Display, Clone, Serialize, Deserialize)]
+pub enum InputValue {
+    /// A number.
+    #[display("{_0}")]
+    Number(u32),
+    /// Global variable, encoded as `leech_count`.
+    #[display("leech_count")]
+    LeechCount,
+    /// Global variable, encoded as `maggot_count`.
+    #[display("maggot_count")]
+    MaggotCount,
+    /// Global variable, encoded as `beaver_count`.
+    #[display("beaver_count")]
+    BeaverCount,
+    /// Global variable, encoded as `smile_count`.
+    #[display("smile_count")]
+    SmileCount,
+    /// Global variable, encoded as `eye_count`.
+    #[display("eye_count")]
+    EyeCount,
+    /// Global variable, encoded as `mimic_count`.
+    #[display("mimic_count")]
+    MimicCount,
+    /// Global variable, encoded as `octahedron_count`.
+    #[display("octahedron_count")]
+    OctahedronCount,
+    /// Global variable, encoded as `spider_count`.
+    #[display("spider_count")]
+    SpiderCount,
+    /// Global variable, encoded as `orb_count`.
+    #[display("orb_count")]
+    OrbCount,
+    /// Global variable, encoded as `scaredeer_count`.
+    #[display("scaredeer_count")]
+    ScaredeerCount,
+    /// Global variable, encoded as `player_x`.
+    ///
+    /// This is between `0` and `13`.
+    #[display("player_x")]
+    PlayerX,
+    /// Global variable, encoded as `player_y`.
+    ///
+    /// This is between `0` and `8`.
+    #[display("player_y")]
+    PlayerY,
+    /// Global variable, encoded as `editor_time`.
+    #[display("editor_time")]
+    EditorTime,
+    /// Global variable, encoded as `add_count`.
+    #[display("add_count")]
+    AddCount,
+    /// Global variable, encoded as `mon_count`.
+    #[display("mon_count")]
+    MonCount,
+    /// Global variable, encoded as `tan_count`.
+    #[display("tan_count")]
+    TanCount,
+    /// Global variable, encoded as `lev_count`.
+    #[display("lev_count")]
+    LevCount,
+    /// Global variable, encoded as `eus_count`.
+    #[display("eus_count")]
+    EusCount,
+    /// Global variable, encoded as `bee_count`.
+    #[display("bee_count")]
+    BeeCount,
+    /// Global variable, encoded as `gor_count`.
+    #[display("gor_count")]
+    GorCount,
+    /// Global variable, encoded as `cif_count`.
+    #[display("cif_count")]
+    CifCount,
+    /// Global variable, encoded as `jukebox_count`.
+    #[display("jukebox_count")]
+    JukeboxCount,
+    /// Global variable, encoded as `egg_count`.
+    #[display("egg_count")]
+    EggCount,
+    /// A custom global variable.
+    ///
+    /// Since I don't know all of the available vanilla
+    /// global variables, this variant wraps a [`String`].
+    #[display("{_0}")]
+    Unknown(String),
+}
+
+/// A branefuck program.
+///
+/// Add statues are able to run Branefuck programs in Endless Void.
+///
+/// See [`BRANEFUCK_CHARACTERS`] for details on valid characters.
+///
+/// See [Endless Void's page on Branefuck](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck) for further details.
+#[derive(Debug, Display, Clone, Serialize, Deserialize)]
+pub struct BranefuckProgram(String);
+
+/// An add statue's destroy value.
+///
+/// Add statues may take in a Branefuck program and a destroy value.
+/// When the program's output matches the set destroy value, the Add
+/// statue will be destroyed.
+///
+/// See [Endless Void's page on Branefuck](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck) for further details.
+#[derive(Debug, Display, Clone, Serialize, Deserialize)]
+pub struct DestroyValue(u32);
+
+/// A (possibly invalid) Void Stranger level.
+///
+/// See [`Data`], [`Unvalidated`], and [`Validated`] for details.
+#[derive(Debug, Display, Clone, Serialize, Deserialize)]
+#[display("{data}")]
+pub struct Level<State = Unvalidated> {
+    /// A level's (possibly invalid) data.
+    ///
+    /// See [`Data`] for details.
+    pub data: Data,
+    /// The uploader's IP adress.
+    ///
+    /// Stored for logging and banning.
+    pub uploader: IpAddr,
+    /// The level's key.
+    pub key: Key,
+    /// The level's current validity state. See [`Validated`] and [`Unvalidated`].
+    state: PhantomData<State>,
+}
+
+#[allow(clippy::doc_markdown)]
+/// A level's representation in the WebUI.
+#[allow(clippy::module_name_repetitions)]
+pub struct IndexLevel {
+    /// See [`Version`].
+    pub version: Version,
+    /// See [`Name`].
+    pub name: Name,
+    /// See [`Description`].
+    pub description: Description,
+    /// See [`Music`].
+    pub music: Music,
+    /// See [`Author`].
+    pub author: Author,
+    /// See [`Brand`].
+    pub brand: Brand,
+    /// See [`BrandImage`].
+    pub brand_image: BrandImage,
+    /// See [`Uploaded`].
+    pub uploaded: Uploaded,
+    /// See [`Edited`].
+    pub edited: Edited,
+    /// See [`Burdens`].
+    pub burdens: Burdens,
+    /// See [`Key`].
+    pub key: Key,
+    /// The IP address of the uploader.
+    pub uploader: IpAddr,
+}
+
+/// A parsed, validated Void Stranger level.
+///
+/// See [`Validated`] for details on level validity.
+pub struct Parsed {
+    /// See [`Version`].
+    pub version: Version,
+    /// See [`Name`].
+    pub name: Name,
+    /// See [`Description`].
+    pub description: Description,
+    /// See [`Music`].
+    pub music: Music,
+    /// See [`Author`].
+    pub author: Author,
+    /// See [`Brand`].
+    pub brand: Brand,
+    /// See [`Uploaded`].
+    pub uploaded: Uploaded,
+    /// See [`Edited`].
+    pub edited: Edited,
+    /// See [`Burdens`].
+    pub burdens: Burdens,
+    /// See [`Tiles`].
+    pub tiles: Tiles,
+    /// See [`Objects`].
+    pub objects: Objects,
+    /// See [`Key`].
+    pub key: Key,
+    /// The IP address of the uploader.
+    pub uploader: IpAddr,
+}
 
 /// A level's data, as sent to Endless Void.
 ///
@@ -147,26 +604,6 @@ pub struct Unvalidated;
 #[derive(Debug, Clone)]
 pub struct Validated;
 
-/// A (possibly invalid) Void Stranger level.
-///
-/// See [`Data`] for details.
-#[derive(Debug, Display, Clone, Serialize, Deserialize)]
-#[display("{data}")]
-pub struct Level<State = Unvalidated> {
-    /// A level's (possibly invalid) data.
-    ///
-    /// See [`Data`] for details.
-    pub data: Data,
-    /// The uploader's IP adress.
-    ///
-    /// Stored for logging and banning.
-    pub uploader: IpAddr,
-    /// The level's key.
-    pub key: Key,
-    /// The level's current validity state. See [`Validated`] and [`Unvalidated`].
-    state: PhantomData<State>,
-}
-
 /// The level's format version.
 ///
 /// At the time of writing (2024-06-02), this is 1 or 2.
@@ -218,6 +655,10 @@ pub struct Author(String);
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Brand(u64);
 
+/// Base64-encoded 6x6 PNG of the level author's brand.
+#[derive(Debug, Display, Clone, Serialize, Deserialize)]
+pub struct BrandImage(String);
+
 /// The level's original upload date.
 ///
 /// Encoded as `yyyymmdd`, e.g. 20240304. The timezone
@@ -244,7 +685,7 @@ pub struct Edited(String);
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Burdens(u8);
 
-/// The level's tiles.
+/// The level's (unparsed) tiles.
 ///
 /// Encoded in Endless Void's black hole format. See
 /// [`VoyagerConfig`] or [`DEFAULT_ALLOWED_CHARACTERS`]
@@ -254,7 +695,13 @@ pub struct Burdens(u8);
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Tiles(String);
 
-/// The level's objects.
+/// The level's parsed tiles.
+///
+/// See [`Tile`] for details.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParsedTiles(pub Vec<Tile>);
+
+/// The level's (unparsed) objects.
 ///
 /// Encoded in Endless Void's black hole format. See
 /// [`VoyagerConfig`] or [`DEFAULT_ALLOWED_CHARACTERS`]
@@ -264,126 +711,205 @@ pub struct Tiles(String);
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Objects(String);
 
+/// The level's parsed objects.
+///
+/// See [`Object`] for details.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParsedObjects(pub Vec<Object>);
+
 /// The level's private key.
 ///
 /// Encoded as a [ULID](https://github.com/ulid/spec) key.
 #[derive(Debug, Display, Clone, Copy, Serialize, Deserialize, Hash, Eq, PartialEq)]
 pub struct Key(Ulid);
 
-/// A parsed, validated Void Stranger level.
-///
-/// See [`Validated`] for details on level validity.
-pub struct Parsed {
-    /// See [`Version`].
-    pub version: Version,
-    /// See [`Name`].
-    pub name: Name,
-    /// See [`Description`].
-    pub description: Description,
-    /// See [`Music`].
-    pub music: Music,
-    /// See [`Author`].
-    pub author: Author,
-    /// See [`Brand`].
-    pub brand: Brand,
-    /// See [`Uploaded`].
-    pub uploaded: Uploaded,
-    /// See [`Edited`].
-    pub edited: Edited,
-    /// See [`Burdens`].
-    pub burdens: Burdens,
-    /// See [`Tiles`].
-    pub tiles: Tiles,
-    /// See [`Objects`].
-    pub objects: Objects,
-    /// See [`Key`].
-    pub key: Key,
-    /// The IP address of the uploader.
-    pub uploader: IpAddr,
-}
+impl TryFrom<&str> for TileId {
+    type Error = Error;
 
-#[allow(clippy::doc_markdown)]
-/// A level's representation in the WebUI.
-// todo: documentation
-#[allow(clippy::module_name_repetitions)]
-pub struct IndexLevel {
-    /// See [`Version`].
-    pub version: Version,
-    /// See [`Name`].
-    pub name: Name,
-    /// See [`Description`].
-    pub description: Description,
-    /// See [`Music`].
-    pub music: Music,
-    /// See [`Author`].
-    pub author: Author,
-    /// See [`Brand`].
-    pub brand: Brand,
-    /// See [`BrandImage`].
-    pub brand_image: BrandImage,
-    /// See [`Uploaded`].
-    pub uploaded: Uploaded,
-    /// See [`Edited`].
-    pub edited: Edited,
-    /// See [`Burdens`].
-    pub burdens: Burdens,
-    /// See [`Key`].
-    pub key: Key,
-    /// The IP address of the uploader.
-    pub uploader: IpAddr,
-}
-
-/// Base64-encoded 6x6 PNG of the level author's brand.
-#[derive(Debug, Display, Clone, Serialize, Deserialize)]
-pub struct BrandImage(String);
-
-#[allow(clippy::doc_markdown)]
-/// A level's representation in the WebUI.
-impl IndexLevel {
-    /// Creates a new [`IndexLevel`] from a parsed level.
-    pub fn new(input: Parsed) -> Self {
-        let brand_image = BrandImage::new(&input.brand);
-        Self {
-            version: input.version,
-            name: input.name,
-            description: input.description,
-            music: input.music,
-            author: input.author,
-            brand: input.brand,
-            brand_image,
-            uploaded: input.uploaded,
-            edited: input.edited,
-            burdens: input.burdens,
-            key: input.key,
-            uploader: input.uploader,
+    fn try_from(input: &str) -> Result<Self> {
+        match input {
+            "pt" => Ok(Self::Pit),
+            "fl" => Ok(Self::Floor),
+            "gl" => Ok(Self::Glass),
+            "mn" => Ok(Self::Bomb),
+            "xp" => Ok(Self::LitBomb),
+            "fs" => Ok(Self::FloorSwitch),
+            "cr" => Ok(Self::CopyFloor),
+            "ex" => Ok(Self::Exit),
+            "df" => Ok(Self::DeathFloor),
+            "bl" => Ok(Self::BlackFloor),
+            "wh" => Ok(Self::BlankFloor),
+            "wa" => Ok(Self::Wall),
+            "mw" => Ok(Self::FunhouseWall),
+            "dw" => Ok(Self::DISWall),
+            "ew" => Ok(Self::EXWall),
+            "ed" => Ok(Self::Edge),
+            "de" => Ok(Self::DISEdge),
+            "st" => Ok(Self::SmallChest),
+            _ => Err(Error::InvalidTiles),
         }
     }
 }
 
-impl BrandImage {
-    /// Creates a new [`BrandImage`] from a [`Brand`].
-    ///
-    /// The brand is encoded as a 6x6 PNG image
-    /// of black and white pixels in Base64 format.
-    pub fn new(input: &Brand) -> Self {
-        let width = 6;
-        let height = 6;
-        let mut img = ImageBuffer::<Rgb<u8>, _>::new(width, height);
-        let bits = input.0.view_bits::<Lsb0>();
-        for (x, y, pixel) in img.enumerate_pixels_mut() {
-            let pixel_is_white = bits[(x + y * height) as usize];
-            *pixel = if pixel_is_white {
-                Rgb([255, 255, 255])
-            } else {
-                Rgb([0, 0, 0])
-            };
+impl TryFrom<&str> for ObjectId {
+    type Error = Error;
+
+    fn try_from(input: &str) -> Result<Self> {
+        match input {
+            "em" => Ok(Self::Empty),
+            "pl" => Ok(Self::Player),
+            "cl" => Ok(Self::Leech),
+            "cc" => Ok(Self::Maggot),
+            "cg" => Ok(Self::Beaver),
+            "cs" => Ok(Self::Smile),
+            "ch" => Ok(Self::Eye),
+            "cm" => Ok(Self::Mimic),
+            "co" => Ok(Self::Octahedron),
+            "hu" => Ok(Self::FamishedMan),
+            "ad" => Ok(Self::AddStatue),
+            "cf" => Ok(Self::CifStatue),
+            "be" => Ok(Self::BeeStatue),
+            "tn" => Ok(Self::TanStatue),
+            "lv" => Ok(Self::LevStatue),
+            "mo" => Ok(Self::MonStatue),
+            "eu" => Ok(Self::EusStatue),
+            "go" => Ok(Self::GorStatue),
+            "jb" => Ok(Self::Jukebox),
+            "eg" => Ok(Self::Egg),
+            "ho" => Ok(Self::FakeEgg),
+            "mm" => Ok(Self::MemoryCrystal),
+            "se" => Ok(Self::SecretExit),
+            "ct" => Ok(Self::Spider),
+            "sd" => Ok(Self::Scaredeer),
+            "cv" => Ok(Self::OrbThing),
+            _ => Err(Error::InvalidObjects),
         }
-        let mut buf = Cursor::new(Vec::new());
-        if let Err(why) = img.write_to(&mut buf, ImageFormat::Png) {
-            warn!("something went wrong while writing image to buffer! {why}");
-        };
-        let png = BASE64_STANDARD.encode(buf.into_inner());
-        Self(png)
+    }
+}
+
+impl ObjectType {
+    /// Turns a [`Vec`] of [`Strings`] into [`ObjectType::Egg`] containing a [`Vec`] of [`Message`].
+    pub fn egg(input: Vec<String>) -> Self {
+        let messages = input.into_iter().map(Message).collect();
+        Self::Egg { messages }
+    }
+
+    /// Attempts to parse the input as either Add statue type.
+    ///
+    /// If succesful, this function will return either [`ObjectType::AddStatue1`]
+    /// or [`ObjectType::AddStatue2`].
+    ///
+    /// The input [`Vec`] must be either 2 or 4 in length.
+    /// - If 2 in length, the 1st element must be a valid [`InputValue`],
+    ///   and the 2nd element a valid [`DestroyValue`].
+    /// - If 4 in length, the first 2 elements must be valid [`InputValue`]s.
+    ///   The 3rd must be a valid [`DestroyValue`]. The 4th and final element must
+    ///   be a valid [`BranefuckProgram`].
+    ///
+    /// Examples of valid input:
+    ///
+    /// 1. (``player_x``, `7`)
+    /// 2. (``leech_count``, `2`, `1`, `[->-<]>?.`)
+
+    // nom's count function returns a Vec, which
+    // isn't needed here (a slice would be fine),
+    // but there's no easy, non-ugly way to make
+    // map_res borrow instead of moving
+    // TODO: get rid of this
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn add_statue(input: Vec<String>) -> Result<Self> {
+        match input.len() {
+            2 => Ok(Self::AddStatue1 {
+                first_input: InputValue::from(&input[0]),
+                destroy_value: DestroyValue::try_from(&input[1])?,
+            }),
+            4 => Ok(Self::AddStatue2 {
+                first_input: InputValue::from(&input[0]),
+                second_input: InputValue::from(&input[1]),
+                destroy_value: DestroyValue::try_from(&input[2])?,
+                branefuck: BranefuckProgram::try_from(input[3].as_str())?,
+            }),
+            _ => Err(Error::InvalidObjects),
+        }
+    }
+
+    /// Attempts to parse the input as [`ObjectType::Direction`].
+    ///
+    /// See [`Direction`] for details.
+    pub fn direction(input: &str) -> Result<Self> {
+        Ok(Self::Direction {
+            direction: Direction::try_from(input)?,
+        })
+    }
+}
+
+impl TryFrom<&str> for Direction {
+    type Error = Error;
+
+    fn try_from(input: &str) -> Result<Self> {
+        match input {
+            // TODO: what are the actual directions?
+            "0" => Ok(Self::Up),
+            "1" => Ok(Self::Down),
+            "2" => Ok(Self::Left),
+            "3" => Ok(Self::Right),
+            _ => Err(Error::InvalidObjects),
+        }
+    }
+}
+
+impl From<&String> for InputValue {
+    fn from(input: &String) -> Self {
+        match input.as_str() {
+            "leech_count" => Self::LeechCount,
+            "maggot_count" => Self::MaggotCount,
+            "beaver_count" => Self::BeaverCount,
+            "smile_count" => Self::SmileCount,
+            "eye_count" => Self::EyeCount,
+            "mimic_count" => Self::MimicCount,
+            "octahedron_count" => Self::OctahedronCount,
+            "spider_count" => Self::SpiderCount,
+            "orb_count" => Self::OrbCount,
+            "scaredeer_count" => Self::ScaredeerCount,
+            "player_x" => Self::PlayerX,
+            "player_y" => Self::PlayerY,
+            "editor_time" => Self::EditorTime,
+            "add_count" => Self::AddCount,
+            "mon_count" => Self::MonCount,
+            "tan_count" => Self::TanCount,
+            "lev_count" => Self::LevCount,
+            "eus_count" => Self::EusCount,
+            "bee_count" => Self::BeeCount,
+            "gor_count" => Self::GorCount,
+            "cif_count" => Self::CifCount,
+            "jukebox_count" => Self::JukeboxCount,
+            "egg_count" => Self::EggCount,
+            _ => input
+                .parse::<u32>()
+                .map_or_else(|_| Self::Unknown(input.into()), Self::Number),
+        }
+    }
+}
+
+impl TryFrom<&str> for BranefuckProgram {
+    type Error = Error;
+
+    fn try_from(input: &str) -> Result<Self> {
+        if input.chars().all(|c| BRANEFUCK_CHARACTERS.contains(c)) {
+            Ok(Self(input.into()))
+        } else {
+            Err(Error::InvalidObjects)
+        }
+    }
+}
+
+impl TryFrom<&String> for DestroyValue {
+    type Error = Error;
+
+    fn try_from(input: &String) -> Result<Self> {
+        Ok(Self(
+            input.parse::<u32>().map_err(|_| Error::InvalidObjects)?,
+        ))
     }
 }
 
@@ -462,8 +988,8 @@ impl<State> Level<State> {
         let uploaded = Uploaded(uploaded.to_string());
         let edited = Edited(edited.to_string());
         let burdens = Burdens::try_from(burdens)?;
-        let tiles = Tiles::try_from(tiles)?;
-        let objects = Objects::try_from(objects)?;
+        let tiles = Tiles::from(tiles);
+        let objects = Objects::from(objects);
         let key = self.key;
         let ip = self.uploader;
 
@@ -482,6 +1008,29 @@ impl<State> Level<State> {
             key,
             uploader: ip,
         })
+    }
+}
+
+#[allow(clippy::doc_markdown)]
+/// A level's representation in the WebUI.
+impl IndexLevel {
+    /// Creates a new [`IndexLevel`] from a parsed level.
+    pub fn new(input: Parsed) -> Self {
+        let brand_image = BrandImage::new(&input.brand);
+        Self {
+            version: input.version,
+            name: input.name,
+            description: input.description,
+            music: input.music,
+            author: input.author,
+            brand: input.brand,
+            brand_image,
+            uploaded: input.uploaded,
+            edited: input.edited,
+            burdens: input.burdens,
+            key: input.key,
+            uploader: input.uploader,
+        }
     }
 }
 
@@ -529,8 +1078,8 @@ impl Parsed {
         let uploaded = self.uploaded.0;
         let edited = self.edited.0;
         let burdens = self.burdens.0;
-        let tiles = self.tiles.0;
-        let objects = self.objects.0;
+        let tiles = self.tiles;
+        let objects = self.objects;
         let data = format!("{version}|{name}|{description}|{music}|{author}|{brand}|{uploaded}|{edited}|{burdens}|{tiles}|{objects}");
         Level {
             data: Data(data),
@@ -538,13 +1087,6 @@ impl Parsed {
             uploader: self.uploader,
             state: PhantomData::<Validated>,
         }
-    }
-}
-
-impl Key {
-    /// Generates a new ULID key for a level.
-    fn new() -> Self {
-        Self(Ulid::new())
     }
 }
 
@@ -680,6 +1222,33 @@ impl TryFrom<&str> for Brand {
     }
 }
 
+impl BrandImage {
+    /// Creates a new [`BrandImage`] from a [`Brand`].
+    ///
+    /// The brand is encoded as a 6x6 PNG image
+    /// of black and white pixels in Base64 format.
+    pub fn new(input: &Brand) -> Self {
+        let width = 6;
+        let height = 6;
+        let mut img = ImageBuffer::<Rgb<u8>, _>::new(width, height);
+        let bits = input.0.view_bits::<Lsb0>();
+        for (x, y, pixel) in img.enumerate_pixels_mut() {
+            let pixel_is_white = bits[(x + y * height) as usize];
+            *pixel = if pixel_is_white {
+                Rgb([255, 255, 255])
+            } else {
+                Rgb([0, 0, 0])
+            };
+        }
+        let mut buf = Cursor::new(Vec::new());
+        if let Err(why) = img.write_to(&mut buf, ImageFormat::Png) {
+            warn!("something went wrong while writing image to buffer! {why}");
+        };
+        let png = BASE64_STANDARD.encode(buf.into_inner());
+        Self(png)
+    }
+}
+
 impl TryFrom<&str> for Burdens {
     type Error = Error;
 
@@ -697,139 +1266,47 @@ impl TryFrom<&str> for Burdens {
     }
 }
 
-fn opt_variant(input: &str) -> IResult<&str, &str> {
-    take_while(is_digit)(input)
-}
-
-fn opt_repeat(input: &str) -> IResult<&str, (&str, &str)> {
-    tuple((take_while(is_x), take_while(is_digit)))(input)
-}
-
-const fn is_digit(input: char) -> bool {
-    input.is_ascii_digit()
-}
-
-const fn is_lowercase(input: char) -> bool {
-    input.is_ascii_lowercase()
-}
-
-const fn is_x(input: char) -> bool {
-    input == 'X'
-}
-
-impl Tiles {
-    /// Parses input as tiles from Void Stranger.
+impl From<&str> for Tiles {
+    /// Checks the input for validity and returns [`Tiles`].
     ///
-    /// # Errors
-    /// Returns an error if any tile was invalid.
-    fn try_from(input: &str) -> Result<Self> {
-        Self::parse(input)?;
-        Ok(Self(input.to_string()))
-    }
-
-    fn parse(input: &str) -> Result<()> {
-        let (remaining, _) =
-            many1(tuple((tile, opt_variant, opt_repeat)))(input).map_err(|why| {
-                warn!("{why}");
-                Error::InvalidTiles
-            })?;
-        if !remaining.is_empty() {
-            warn!("probably unrecognized tile! remaining: {remaining}");
-            return Err(Error::InvalidTiles);
-        }
-        Ok(())
-    }
-}
-
-fn tile(input: &str) -> IResult<&str, &str> {
-    map_res(take_while_m_n(2, 2, is_lowercase), to_tile)(input)
-}
-
-fn to_tile(input: &str) -> Result<&str> {
-    if ALLOWED_TILES.contains(&input) {
-        Ok(input)
-    } else {
-        warn!("unrecognized tile! {input}");
-        Err(Error::InvalidTiles)
-    }
-}
-
-impl Objects {
-    /// Parses input as objects from Void Stranger.
+    /// See [`ParsedTiles::parse()`] for details.
     ///
-    /// # Errors
-    /// Returns an error if any object was invalid.
-    fn try_from(input: &str) -> Result<Self> {
-        Self::parse(input)?;
-        Ok(Self(input.to_string()))
-    }
-
-    fn parse(input: &str) -> Result<()> {
-        let (remaining, _) = many1(tuple((
-            alt((add_statue, egg, object)),
-            opt_variant,
-            opt_repeat,
-        )))(input)
-        .map_err(|why| {
-            warn!("{why}");
-            Error::InvalidObjects
-        })?;
-        if !remaining.is_empty() {
-            warn!("probably unrecognized object! remaining: {remaining}");
-            return Err(Error::InvalidObjects);
-        }
-        Ok(())
+    /// On invalid input, this function will log a warning instead of returning
+    /// an error, because I am only 99% confident in the parser.
+    fn from(input: &str) -> Self {
+        // i am only 99% confident in the parser, so for now,
+        // only log if an error happens
+        if let Err(why) = ParsedTiles::parse(input) {
+            warn!("error while parsing tiles: {why}");
+        };
+        Self(input.to_owned())
     }
 }
 
-fn object(input: &str) -> IResult<&str, String> {
-    map_res(take_while_m_n(2, 2, is_lowercase), to_object)(input)
-}
-
-fn add_statue(input: &str) -> IResult<&str, String> {
-    alt((
-        preceded(
-            tag("ad1"),
-            count(terminated(take_until1("!"), char('!')), 2),
-        ),
-        preceded(
-            tag("ad2"),
-            count(terminated(take_until1("!"), char('!')), 4),
-        ),
-    ))(input)
-    .map(|(remaining, output)| (remaining, output.join("")))
-}
-
-fn egg(input: &str) -> IResult<&str, String> {
-    let (remaining, number_of_dialogues) =
-        preceded(tag("eg"), map_res(take(1u8), |n: &str| n.parse::<usize>()))(input)?;
-    let (remaining, dialogues) = count(
-        terminated(map_res(take_until1("!"), decode_base64), char('!')),
-        number_of_dialogues,
-    )(remaining)?;
-    Ok((remaining, dialogues.join("")))
-}
-
-fn decode_base64(input: &str) -> Result<String> {
-    String::from_utf8(
-        BASE64_STANDARD
-            .decode(input)
-            .map_err(|_| Error::InvalidObjects)?,
-    )
-    .map_err(|_| Error::InvalidObjects)
-}
-
-fn to_object(input: &str) -> Result<String> {
-    if ALLOWED_OBJECTS.contains(&input) {
-        Ok(input.into())
-    } else {
-        warn!("unrecognized object! {input}");
-        Err(Error::InvalidTiles)
+impl From<&str> for Objects {
+    /// Checks the input for validity and returns [`Objects`].
+    ///
+    /// See [`ParsedObjects::parse()`] for details.
+    ///
+    /// On invalid input, this function will log a warning instead of returning
+    /// an error, because I am only 99% confident in the parser.
+    fn from(input: &str) -> Self {
+        if let Err(why) = ParsedObjects::parse(input) {
+            warn!("error while parsing objects: {why}");
+        };
+        Self(input.to_string())
     }
 }
 
 impl Key {
-    /// Parses input as a ULID key.
+    /// Generates a new [ULID](https://github.com/ulid/spec)
+    /// key for a level.
+    fn new() -> Self {
+        Self(Ulid::new())
+    }
+
+    /// Attempts to parse the input as a
+    /// [ULID](https://github.com/ulid/spec) key.
     pub fn parse(input: &str) -> Option<Self> {
         Self::from_str(input).ok()
     }
@@ -838,12 +1315,107 @@ impl Key {
 impl FromStr for Key {
     type Err = Error;
 
-    fn from_str(input: &str) -> std::prelude::v1::Result<Self, Self::Err> {
+    fn from_str(input: &str) -> Result<Self> {
         Ok(Self(input.parse()?))
     }
 }
 
-impl std::fmt::Display for Parsed {
+impl Display for Tile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let id = &self.id;
+        let tile_type = self
+            .tile_type
+            .as_ref()
+            .map_or_else(String::new, ToString::to_string);
+        let multiplier = self
+            .multiplier
+            .as_ref()
+            .map_or_else(String::new, ToString::to_string);
+        write!(f, "{id}{tile_type}{multiplier}")
+    }
+}
+
+impl Display for Object {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let id = &self.id;
+        let object_type = self
+            .object_type
+            .as_ref()
+            .map_or_else(String::new, ToString::to_string);
+        let multiplier = self
+            .multiplier
+            .as_ref()
+            .map_or_else(String::new, ToString::to_string);
+        write!(f, "{id}{object_type}{multiplier}")
+    }
+}
+
+impl Display for ObjectType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let object_type = match self {
+            Self::Direction { direction } => direction.to_string(),
+            Self::AddStatue1 {
+                first_input,
+                destroy_value,
+            } => {
+                let first_input = BASE64_STANDARD.encode(first_input.to_string());
+                let destroy_value = BASE64_STANDARD.encode(destroy_value.to_string());
+                format!("1{first_input}!{destroy_value}!")
+            }
+            Self::AddStatue2 {
+                first_input,
+                second_input,
+                destroy_value,
+                branefuck,
+            } => {
+                let first_input = BASE64_STANDARD.encode(first_input.to_string());
+                let second_input = BASE64_STANDARD.encode(second_input.to_string());
+                let destroy_value = BASE64_STANDARD.encode(destroy_value.to_string());
+                format!("2{first_input}!{second_input}!{destroy_value}!{branefuck}!")
+            }
+            Self::Egg { messages } => {
+                let len = messages.len();
+                let messages = messages
+                    .iter()
+                    .map(|m| BASE64_STANDARD.encode(m.to_string()))
+                    .collect_vec()
+                    .join("!");
+                if messages.is_empty() {
+                    "0".into()
+                } else {
+                    format!("{len}{messages}!")
+                }
+            }
+        };
+        write!(f, "{object_type}")
+    }
+}
+
+impl Display for ParsedTiles {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let tiles = self
+            .0
+            .iter()
+            .map(ToString::to_string)
+            .collect_vec()
+            .join("");
+        write!(f, "{tiles}")
+    }
+}
+
+impl Display for ParsedObjects {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let objects = self
+            .0
+            .iter()
+            .map(ToString::to_string)
+            .collect_vec()
+            .join("");
+        write!(f, "{objects}")
+    }
+}
+
+impl Display for Parsed {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Version: {}\nName: {}\nDescription: {}\nMusic: {}\nAuthor: {}\nBrand: {}\nBurdens: {}\nTiles: {}\nObjects: {}\nUploaded: {}\nEdited: {}", self.version, self.name, self.description, self.music, self.author, self.brand, self.burdens, self.tiles, self.objects, self.uploaded, self.edited)
     }
