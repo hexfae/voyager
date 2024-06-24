@@ -20,6 +20,10 @@ use nom::{
 };
 use tracing::{info, warn};
 
+// for documentation
+#[allow(unused_imports)]
+use crate::utils::level::{BranefuckProgram, DestroyValue, InputValue};
+
 impl ParsedTiles {
     /// Attempts to parse the input as a valid sequence of tiles.
     ///
@@ -275,7 +279,7 @@ fn multiplier(input: &str) -> IResult<&str, Option<Multiplier>> {
 /// Tests if the character is an ASCII digit: `0-9`.
 ///
 /// This function exists because `nom`'s built-in function takes in a [`u8`]
-/// instead of a [`char`].
+/// instead of a [`prim@char`].
 const fn is_digit(input: char) -> bool {
     input.is_ascii_digit()
 }
@@ -283,7 +287,7 @@ const fn is_digit(input: char) -> bool {
 /// Tests if the character is a lowercase ASCII character: `a-z`.
 ///
 /// This function exists because `nom`'s built-in function takes in a [`u8`]
-/// instead of a [`char`].
+/// instead of a [`prim@char`].
 const fn is_lowercase(input: char) -> bool {
     input.is_ascii_lowercase()
 }

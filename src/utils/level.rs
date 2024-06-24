@@ -788,7 +788,7 @@ impl TryFrom<&str> for ObjectId {
 }
 
 impl ObjectType {
-    /// Turns a [`Vec`] of [`Strings`] into [`ObjectType::Egg`] containing a [`Vec`] of [`Message`].
+    /// Turns a [`Vec`] of [`String`]s into [`ObjectType::Egg`] containing a [`Vec`] of [`Message`].
     pub fn egg(input: Vec<String>) -> Self {
         let messages = input.into_iter().map(Message).collect();
         Self::Egg { messages }
