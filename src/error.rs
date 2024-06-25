@@ -5,9 +5,12 @@
 
 // for documentation
 #[allow(unused_imports)]
-use crate::utils::level::{
-    InputValue, Objects, Tiles, BRAND_36_BITS, BURDENS_4_BITS, MAX_AUTHOR_LEN, MAX_DESCRIPTION_LEN,
-    MAX_NAME_LEN,
+use crate::{
+    check_if_voyager_is_file,
+    utils::level::{
+        DestroyValue, Direction, InputValue, Objects, Tiles, BRAND_36_BITS, BURDENS_4_BITS,
+        MAX_AUTHOR_LEN, MAX_DESCRIPTION_LEN, MAX_NAME_LEN,
+    },
 };
 #[allow(unused_imports)]
 use std::str::FromStr;
@@ -140,26 +143,28 @@ pub enum Error {
     /// report it!), or the file is corrupted.
     #[error("ron deserialization error: {0}")]
     Ron(#[from] ron::de::SpannedError),
-    /// The `voyager` directory could not be created.
+    /// On startup, either the `voyager` executable could not be
+    /// renamed, or the `voyager` directory could not be created.
     ///
-    /// The executable must be renamed from `voyager`
-    /// (e.g. to `voyagerexe`, `voyager-amd64, ...`).
-    #[error("voyager directory could not be created/opened; rename the executable if it's called voyager")]
+    /// See [`check_if_voyager_is_file`] for details.
+    #[error("could not rename the voyager executable")]
     Directory,
     /// Strum enum parsing error.
     ///
-    /// Returned by [`TileId`], [`ObjectId`], [`Direction`], and [`InputValue`].
-    #[error(transparent)]
+    /// Returned by [`InputValue`] and [`Direction`].
+    #[error("could not parse input: {0}")]
     Strum(#[from] strum::ParseError),
-    #[error(transparent)]
+    #[error("could not parse integer: {0}")]
+    /// Integer parsing error.
+    ///
+    /// Returned by [`DestroyValue`].
     ParseInt(#[from] std::num::ParseIntError),
     #[error(transparent)]
     /// Used for "impossible" errors.
     ///
     /// This is used in the [`FromStr`] implementations for
-    /// [`InputValue`], [`Tiles`], and [`Objects`], since
-    /// implementing [`FromStr`] is apparently preferred to
-    /// [`From<&str>`]
+    /// [`Tiles`] and [`Objects`], since implementing [`FromStr`]
+    /// is apparently preferred to [`From<&str>`]
     Infallible(#[from] std::convert::Infallible),
 }
 

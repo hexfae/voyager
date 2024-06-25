@@ -119,7 +119,7 @@ fn create_voyager_directories() -> Result<()> {
 ///
 /// # Errors
 /// It returns an error if the executable could not be renamed.
-fn check_if_voyager_is_file() -> Result<()> {
+pub fn check_if_voyager_is_file() -> Result<()> {
     if Path::new("voyager").is_file() {
         warn!("could not create voyager directory!");
         info!("renaming the executable to voyagerexe...");
