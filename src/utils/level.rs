@@ -35,13 +35,16 @@ pub const BRAND_36_BITS: u64 = 0b1111_1111_1111_1111_1111_1111_1111_1111_1111;
 /// Equal to 2^4-1 or 15.
 pub const BURDENS_4_BITS: u8 = 0b1111;
 
-/// All of the valid Branefuck characters.
+/// All of the valid
+/// [Branefuck](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck)
+/// characters.
 ///
-/// These are the standard Brainfuck characters, minus `,`
-/// (input is instead given in the level editor's UI), plus
-/// `?` (returns a number corresponding to the sign of the
-/// current cell's number), plus all decimal digits (since
-/// they may be used as multipliers, e.g. `+5` instead of `+++++`).
+/// These are the standard
+/// [Brainfuck](https://en.wikipedia.org/wiki/Brainfuck)
+/// characters, minus `,` (input is instead given in the level editor's
+/// UI), plus `?` (returns a number corresponding to the sign of the
+/// current cell's number), plus all decimal digits (since they may
+/// be used as multipliers, e.g. `+5` instead of `+++++`).
 ///
 /// See [Endless Void's page on Branefuck](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck) for details.
 const BRANEFUCK_CHARACTERS: &str = "<>+-.[]?1234567890";

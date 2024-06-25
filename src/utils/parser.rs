@@ -137,7 +137,9 @@ fn direction(input: &str) -> IResult<&str, ObjectType> {
 ///
 /// Example of valid input: `[->-<]>?.!`
 ///
-/// This is used for the Branefuck program parameter of type 2 Add statues.
+/// This is used for the
+/// [Branefuck program](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck)
+/// parameter of type 2 Add statues.
 fn take_until_termination_character(input: &str) -> IResult<&str, &str> {
     terminated(take_until1("!"), char('!'))(input)
 }

@@ -4,9 +4,9 @@ pub use crate::error::NumberError;
 pub use crate::error::StringError;
 pub use crate::utils::level::Key;
 pub use crate::utils::level::Level;
-pub use crate::utils::server::Backend;
-pub use crate::utils::server::Credentials;
 pub use crate::utils::server::VoyagerConfig;
+pub use crate::utils::webui::backend::Backend;
+pub use crate::utils::webui::backend::Credentials;
 /// Authentication session used for
 /// logging in to the Web UI.
 pub type AuthSession = axum_login::AuthSession<Backend>;
