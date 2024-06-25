@@ -35,20 +35,6 @@ async fn main() -> Result<()> {
     // is dropped (at the end of this scope)
     let _guard = file_log(&handle);
 
-    let levels = itertools::Itertools::collect_vec(include_str!("levels").split(','));
-    for level in levels {
-        dbg!(&level);
-        let level = Level::new(
-            level,
-            std::net::IpAddr::V4(std::net::Ipv4Addr::new(192, 168, 0, 1)),
-        );
-        let parsed = level.into_parsed(&VoyagerConfig::default());
-        match parsed {
-            Ok(parsed) => info!("{}", parsed.name),
-            Err(why) => panic!("{why}"),
-        };
-    }
-
     info!("Voyager is loading...");
     let app_state = AppState::try_load()?;
     // save immediately in case a new config option has
