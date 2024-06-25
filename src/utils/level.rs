@@ -7,11 +7,12 @@ use crate::utils::parser::{parse_objects, parse_tiles};
 use base64::{prelude::BASE64_STANDARD, Engine};
 use bitvec::order::Lsb0;
 use bitvec::view::BitView;
-use derive_more::Display;
+use derive_more::{Display, FromStr};
 use image::{ImageBuffer, ImageFormat, Rgb};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use std::{convert::Infallible, io::Cursor, marker::PhantomData, net::IpAddr, str::FromStr};
+use std::{convert::Infallible, io::Cursor, marker::PhantomData, net::IpAddr};
+use strum_macros::EnumString;
 use time::OffsetDateTime;
 use tracing::warn;
 use ulid::Ulid;
@@ -106,147 +107,191 @@ pub struct Object {
 ///
 /// Every ID is encoded as 2 lowercase characters, e.g. `wa` means wall.
 #[non_exhaustive]
-#[derive(Debug, Display, Clone, Serialize, Deserialize)]
+#[derive(Debug, Display, Clone, Serialize, Deserialize, EnumString)]
 pub enum TileId {
     /// Encoded as `pt`.
     #[display("pt")]
+    #[strum(serialize = "pt")]
     Pit,
     /// Encoded as `fl`.
     #[display("fl")]
+    #[strum(serialize = "fl")]
     Floor,
     /// Encoded as `gl`.
     #[display("gl")]
+    #[strum(serialize = "gl")]
     Glass,
     /// Encoded as `mn`.
     #[display("mn")]
+    #[strum(serialize = "mn")]
     Bomb,
     /// Encoded as `xp`.
     #[display("xp")]
+    #[strum(serialize = "xp")]
     LitBomb,
     /// Encoded as `fs`.
     #[display("fs")]
+    #[strum(serialize = "fs")]
     FloorSwitch,
     /// Encoded as `cr`.
     #[display("cr")]
+    #[strum(serialize = "cr")]
     CopyFloor,
     /// Encoded as `ex`.
     #[display("ex")]
+    #[strum(serialize = "ex")]
     Exit,
     /// Encoded as `df`.
     #[display("df")]
+    #[strum(serialize = "df")]
     DeathFloor,
     /// Encoded as `bl`.
     #[display("bl")]
+    #[strum(serialize = "bl")]
     BlackFloor,
     /// Encoded as `wh`.
     #[display("wh")]
+    #[strum(serialize = "wh")]
     BlankFloor,
     /// Encoded as `wa`.
     #[display("wa")]
+    #[strum(serialize = "wa")]
     Wall,
     /// Encoded as `mw`.
     #[display("mw")]
+    #[strum(serialize = "mw")]
     FunhouseWall,
     /// Encoded as `dw`.
     #[display("dw")]
+    #[strum(serialize = "dw")]
     DISWall,
     /// Encoded as `ew`.
     #[display("ew")]
+    #[strum(serialize = "ew")]
     EXWall,
     /// Encoded as `ed`.
     #[display("ed")]
+    #[strum(serialize = "ed")]
     Edge,
     /// Encoded as `de`.
     #[display("de")]
+    #[strum(serialize = "de")]
     DISEdge,
     /// Encoded as `st`.
     #[display("st")]
+    #[strum(serialize = "st")]
     SmallChest,
 }
 
 /// All valid object IDs.
 ///
 /// Every ID is encoded as 2 lowercase characters, e.g. `pl` means player.
-#[derive(Debug, Display, Clone, Serialize, Deserialize)]
+#[derive(Debug, Display, Clone, Serialize, Deserialize, EnumString)]
 #[non_exhaustive]
 pub enum ObjectId {
     /// Encoded as `em`.
     #[display("em")]
+    #[strum(serialize = "em")]
     Empty,
     /// Encoded as `pl`.
     #[display("pl")]
+    #[strum(serialize = "pl")]
     Player,
     /// Encoded as `cl`.
     #[display("cl")]
+    #[strum(serialize = "cl")]
     Leech,
     /// Encoded as `cc`.
     #[display("cc")]
+    #[strum(serialize = "cc")]
     Maggot,
     /// Encoded as `cg`.
     #[display("cg")]
+    #[strum(serialize = "cg")]
     Beaver,
     /// Encoded as `cs`.
     #[display("cs")]
+    #[strum(serialize = "cs")]
     Smile,
     /// Encoded as `ch`.
     #[display("ch")]
+    #[strum(serialize = "ch")]
     Eye,
     /// Encoded as `cm`.
     #[display("cm")]
+    #[strum(serialize = "cm")]
     Mimic,
     /// Encoded as `co`.
     #[display("co")]
+    #[strum(serialize = "co")]
     Octahedron,
     /// Encoded as `hu`.
     #[display("hu")]
+    #[strum(serialize = "hu")]
     FamishedMan,
     /// Encoded as `ad`.
     #[display("ad")]
+    #[strum(serialize = "ad")]
     AddStatue,
     /// Encoded as `cf`.
     #[display("cf")]
+    #[strum(serialize = "cf")]
     CifStatue,
     /// Encoded as `be`.
     #[display("be")]
+    #[strum(serialize = "be")]
     BeeStatue,
     /// Encoded as `tn`.
     #[display("tn")]
+    #[strum(serialize = "tn")]
     TanStatue,
     /// Encoded as `lv`.
     #[display("lv")]
+    #[strum(serialize = "lv")]
     LevStatue,
     /// Encoded as `mo`.
     #[display("mo")]
+    #[strum(serialize = "mo")]
     MonStatue,
     /// Encoded as `eu`.
     #[display("eu")]
+    #[strum(serialize = "eu")]
     EusStatue,
     /// Encoded as `go`.
     #[display("go")]
+    #[strum(serialize = "go")]
     GorStatue,
     /// Encoded as `jb`.
     #[display("jb")]
+    #[strum(serialize = "jb")]
     Jukebox,
     /// Encoded as `eg`.
     #[display("eg")]
+    #[strum(serialize = "eg")]
     Egg,
     /// Encoded as `ho`.
     #[display("ho")]
+    #[strum(serialize = "ho")]
     FakeEgg,
     /// Encoded as `mm`.
     #[display("mm")]
+    #[strum(serialize = "mm")]
     MemoryCrystal,
     /// Encoded as `se`.
     #[display("se")]
+    #[strum(serialize = "se")]
     SecretExit,
     /// Encoded as `ct`.
     #[display("ct")]
+    #[strum(serialize = "ct")]
     Spider,
     /// Encoded as `sd`.
     #[display("sd")]
+    #[strum(serialize = "sd")]
     Scaredeer,
     /// Encoded as `cv`.
     #[display("cv")]
+    #[strum(serialize = "cv")]
     OrbThing,
 }
 
@@ -339,20 +384,24 @@ pub struct Message(pub String);
 /// (this isn't very important for writing a parser).
 ///
 /// This is only used for enemies, as far as I can tell.
-#[derive(Debug, Display, Clone, Serialize, Deserialize)]
+#[derive(Debug, Display, Clone, Serialize, Deserialize, EnumString)]
 pub enum Direction {
     // TODO: what are the actual directions?
     /// Up. Unknown encoding, temporarily `0`.
     #[display("0")]
+    #[strum(serialize = "0")]
     Up,
     /// Down. Unknown encoding, temporarily `1`.
     #[display("1")]
+    #[strum(serialize = "1")]
     Down,
     /// Left. Unknown encoding, temporarily `2`.
     #[display("2")]
+    #[strum(serialize = "2")]
     Left,
     /// Right. Unknown encoding, temporarily `3`.
     #[display("3")]
+    #[strum(serialize = "3")]
     Right,
 }
 
@@ -368,90 +417,111 @@ pub enum Direction {
 ///
 /// See [Endless Void's page on Branefuck](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck)
 /// for details.
-#[derive(Debug, Display, Clone, Serialize, Deserialize)]
+#[derive(Debug, Display, Clone, Serialize, Deserialize, EnumString)]
 pub enum InputValue {
-    /// A number.
+    /// Unknown input, either a number or a vanilla global variable.
+    ///
+    /// Since I don't know all of the available vanilla global variables,
+    /// and since a number is a valid input, this variant wraps a [`String`].
     #[display("{_0}")]
-    Number(u32),
+    #[strum(default)]
+    Unknown(String),
     /// Global variable, encoded as `leech_count`.
     #[display("leech_count")]
+    #[strum(serialize = "leech_count")]
     LeechCount,
     /// Global variable, encoded as `maggot_count`.
     #[display("maggot_count")]
+    #[strum(serialize = "maggot_count")]
     MaggotCount,
     /// Global variable, encoded as `beaver_count`.
     #[display("beaver_count")]
+    #[strum(serialize = "beaver_count")]
     BeaverCount,
     /// Global variable, encoded as `smile_count`.
     #[display("smile_count")]
+    #[strum(serialize = "smile_count")]
     SmileCount,
     /// Global variable, encoded as `eye_count`.
     #[display("eye_count")]
+    #[strum(serialize = "eye_count")]
     EyeCount,
     /// Global variable, encoded as `mimic_count`.
     #[display("mimic_count")]
+    #[strum(serialize = "mimic_count")]
     MimicCount,
     /// Global variable, encoded as `octahedron_count`.
     #[display("octahedron_count")]
+    #[strum(serialize = "octahedron_count")]
     OctahedronCount,
     /// Global variable, encoded as `spider_count`.
     #[display("spider_count")]
+    #[strum(serialize = "spider_count")]
     SpiderCount,
     /// Global variable, encoded as `orb_count`.
     #[display("orb_count")]
+    #[strum(serialize = "orb_count")]
     OrbCount,
     /// Global variable, encoded as `scaredeer_count`.
     #[display("scaredeer_count")]
+    #[strum(serialize = "scaredeer_count")]
     ScaredeerCount,
     /// Global variable, encoded as `player_x`.
     ///
     /// This is between `0` and `13`.
     #[display("player_x")]
+    #[strum(serialize = "player_x")]
     PlayerX,
     /// Global variable, encoded as `player_y`.
     ///
     /// This is between `0` and `8`.
     #[display("player_y")]
+    #[strum(serialize = "player_y")]
     PlayerY,
     /// Global variable, encoded as `editor_time`.
     #[display("editor_time")]
+    #[strum(serialize = "editor_time")]
     EditorTime,
     /// Global variable, encoded as `add_count`.
     #[display("add_count")]
+    #[strum(serialize = "add_count")]
     AddCount,
     /// Global variable, encoded as `mon_count`.
     #[display("mon_count")]
+    #[strum(serialize = "mon_count")]
     MonCount,
     /// Global variable, encoded as `tan_count`.
     #[display("tan_count")]
+    #[strum(serialize = "tan_count")]
     TanCount,
     /// Global variable, encoded as `lev_count`.
     #[display("lev_count")]
+    #[strum(serialize = "lev_count")]
     LevCount,
     /// Global variable, encoded as `eus_count`.
     #[display("eus_count")]
+    #[strum(serialize = "eus_count")]
     EusCount,
     /// Global variable, encoded as `bee_count`.
     #[display("bee_count")]
+    #[strum(serialize = "bee_count")]
     BeeCount,
     /// Global variable, encoded as `gor_count`.
     #[display("gor_count")]
+    #[strum(serialize = "gor_count")]
     GorCount,
     /// Global variable, encoded as `cif_count`.
     #[display("cif_count")]
+    #[strum(serialize = "cif_count")]
     CifCount,
     /// Global variable, encoded as `jukebox_count`.
     #[display("jukebox_count")]
+    #[strum(serialize = "jukebox_count")]
     JukeboxCount,
     /// Global variable, encoded as `egg_count`.
     #[display("egg_count")]
+    #[strum(serialize = "egg_count")]
     EggCount,
-    /// A custom global variable.
-    ///
-    /// Since I don't know all of the available vanilla
-    /// global variables, this variant wraps a [`String`].
-    #[display("{_0}")]
-    Unknown(String),
 }
 
 /// A [Branefuck program](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck).
@@ -474,7 +544,7 @@ pub struct BranefuckProgram(String);
 /// destroy value, the Add statue will be destroyed.
 ///
 /// See [Endless Void's page on Branefuck](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck) for further details.
-#[derive(Debug, Display, Clone, Serialize, Deserialize)]
+#[derive(Debug, Display, Clone, Serialize, Deserialize, FromStr)]
 pub struct DestroyValue(u32);
 
 /// A (possibly invalid) Void Stranger level.
@@ -734,70 +804,6 @@ pub struct ParsedObjects(pub Vec<Object>);
 #[derive(Debug, Display, Clone, Copy, Serialize, Deserialize, Hash, Eq, PartialEq)]
 pub struct Key(Ulid);
 
-impl FromStr for TileId {
-    type Err = Error;
-
-    fn from_str(input: &str) -> Result<Self> {
-        match input {
-            "pt" => Ok(Self::Pit),
-            "fl" => Ok(Self::Floor),
-            "gl" => Ok(Self::Glass),
-            "mn" => Ok(Self::Bomb),
-            "xp" => Ok(Self::LitBomb),
-            "fs" => Ok(Self::FloorSwitch),
-            "cr" => Ok(Self::CopyFloor),
-            "ex" => Ok(Self::Exit),
-            "df" => Ok(Self::DeathFloor),
-            "bl" => Ok(Self::BlackFloor),
-            "wh" => Ok(Self::BlankFloor),
-            "wa" => Ok(Self::Wall),
-            "mw" => Ok(Self::FunhouseWall),
-            "dw" => Ok(Self::DISWall),
-            "ew" => Ok(Self::EXWall),
-            "ed" => Ok(Self::Edge),
-            "de" => Ok(Self::DISEdge),
-            "st" => Ok(Self::SmallChest),
-            _ => Err(Error::InvalidTiles),
-        }
-    }
-}
-
-impl FromStr for ObjectId {
-    type Err = Error;
-
-    fn from_str(input: &str) -> Result<Self> {
-        match input {
-            "em" => Ok(Self::Empty),
-            "pl" => Ok(Self::Player),
-            "cl" => Ok(Self::Leech),
-            "cc" => Ok(Self::Maggot),
-            "cg" => Ok(Self::Beaver),
-            "cs" => Ok(Self::Smile),
-            "ch" => Ok(Self::Eye),
-            "cm" => Ok(Self::Mimic),
-            "co" => Ok(Self::Octahedron),
-            "hu" => Ok(Self::FamishedMan),
-            "ad" => Ok(Self::AddStatue),
-            "cf" => Ok(Self::CifStatue),
-            "be" => Ok(Self::BeeStatue),
-            "tn" => Ok(Self::TanStatue),
-            "lv" => Ok(Self::LevStatue),
-            "mo" => Ok(Self::MonStatue),
-            "eu" => Ok(Self::EusStatue),
-            "go" => Ok(Self::GorStatue),
-            "jb" => Ok(Self::Jukebox),
-            "eg" => Ok(Self::Egg),
-            "ho" => Ok(Self::FakeEgg),
-            "mm" => Ok(Self::MemoryCrystal),
-            "se" => Ok(Self::SecretExit),
-            "ct" => Ok(Self::Spider),
-            "sd" => Ok(Self::Scaredeer),
-            "cv" => Ok(Self::OrbThing),
-            _ => Err(Error::InvalidObjects),
-        }
-    }
-}
-
 impl ObjectType {
     /// Turns a [`Vec`] of [`String`]s into [`ObjectType::Egg`] containing a [`Vec`] of [`Message`].
     pub fn egg(input: Vec<String>) -> Self {
@@ -854,56 +860,6 @@ impl ObjectType {
     }
 }
 
-impl FromStr for Direction {
-    type Err = Error;
-
-    fn from_str(input: &str) -> Result<Self> {
-        match input {
-            // TODO: what are the actual directions?
-            "0" => Ok(Self::Up),
-            "1" => Ok(Self::Down),
-            "2" => Ok(Self::Left),
-            "3" => Ok(Self::Right),
-            _ => Err(Error::InvalidObjects),
-        }
-    }
-}
-
-impl FromStr for InputValue {
-    type Err = Infallible;
-
-    fn from_str(input: &str) -> Result<Self, Infallible> {
-        match input {
-            "leech_count" => Ok(Self::LeechCount),
-            "maggot_count" => Ok(Self::MaggotCount),
-            "beaver_count" => Ok(Self::BeaverCount),
-            "smile_count" => Ok(Self::SmileCount),
-            "eye_count" => Ok(Self::EyeCount),
-            "mimic_count" => Ok(Self::MimicCount),
-            "octahedron_count" => Ok(Self::OctahedronCount),
-            "spider_count" => Ok(Self::SpiderCount),
-            "orb_count" => Ok(Self::OrbCount),
-            "scaredeer_count" => Ok(Self::ScaredeerCount),
-            "player_x" => Ok(Self::PlayerX),
-            "player_y" => Ok(Self::PlayerY),
-            "editor_time" => Ok(Self::EditorTime),
-            "add_count" => Ok(Self::AddCount),
-            "mon_count" => Ok(Self::MonCount),
-            "tan_count" => Ok(Self::TanCount),
-            "lev_count" => Ok(Self::LevCount),
-            "eus_count" => Ok(Self::EusCount),
-            "bee_count" => Ok(Self::BeeCount),
-            "gor_count" => Ok(Self::GorCount),
-            "cif_count" => Ok(Self::CifCount),
-            "jukebox_count" => Ok(Self::JukeboxCount),
-            "egg_count" => Ok(Self::EggCount),
-            _ => Ok(input
-                .parse::<u32>()
-                .map_or_else(|_| Self::Unknown(input.into()), Self::Number)),
-        }
-    }
-}
-
 impl FromStr for BranefuckProgram {
     type Err = Error;
 
@@ -916,16 +872,6 @@ impl FromStr for BranefuckProgram {
     }
 }
 
-impl FromStr for DestroyValue {
-    type Err = Error;
-
-    fn from_str(input: &str) -> Result<Self> {
-        Ok(Self(
-            input.parse::<u32>().map_err(|_| Error::InvalidObjects)?,
-        ))
-    }
-}
-
 impl Level<Unvalidated> {
     /// Creates a new (possibly invalid) Void Stranger level, for POST.
     ///
@@ -934,9 +880,9 @@ impl Level<Unvalidated> {
     /// [`Self::into_parsed`] before insertion into the database.
     ///
     /// See [`Data`] for details on validity.
-    pub fn new(data: String, ip: IpAddr) -> Self {
+    pub fn new(data: impl Into<String>, ip: IpAddr) -> Self {
         Self {
-            data: Data(data),
+            data: Data(data.into()),
             uploader: ip,
             key: Key::new(),
             state: PhantomData::<Unvalidated>,
@@ -1289,7 +1235,7 @@ impl FromStr for Tiles {
     fn from_str(input: &str) -> Result<Self, Infallible> {
         // i am only 99% confident in the parser, so for now,
         // only log if an error happens
-        if let Err(why) = ParsedObjects::from_str(input) {
+        if let Err(why) = ParsedTiles::from_str(input) {
             warn!("error while parsing tiles: {why}");
         };
         Ok(Self(input.to_owned()))

@@ -146,6 +146,13 @@ pub enum Error {
     /// (e.g. to `voyagerexe`, `voyager-amd64, ...`).
     #[error("voyager directory could not be created/opened; rename the executable if it's called voyager")]
     Directory,
+    /// Strum enum parsing error.
+    ///
+    /// Returned by [`TileId`], [`ObjectId`], [`Direction`], and [`InputValue`].
+    #[error(transparent)]
+    Strum(#[from] strum::ParseError),
+    #[error(transparent)]
+    ParseInt(#[from] std::num::ParseIntError),
     #[error(transparent)]
     /// Used for "impossible" errors.
     ///

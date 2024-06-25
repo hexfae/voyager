@@ -1,5 +1,6 @@
 //! Contains [`AppState`], related methods, and
 //! various Axum server-related functions.
+
 use crate::prelude::*;
 use crate::utils::{
     level::{IndexLevel, Validated},
