@@ -52,8 +52,8 @@ impl Backend {
     /// a new one using `Self::new()`, which will
     /// ask for a username and password.
     ///
-    /// # Panics
-    /// Panics if a Voyager database is found, but
+    /// # Errors
+    /// Returns an error if a Web UI user is found, but
     /// deserializing it fails. Most likely, some
     /// data structure had a breaking change (or
     /// the file is corrupted).

@@ -88,20 +88,20 @@ const DEFAULT_ENDLESS_VOID_VERSION: &str = "0.89";
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AppState {
     /// Voyager's data (levels, orphans, banned IPs).
-    data: VoyagerData,
+    pub data: VoyagerData,
     /// Voyager's configuration options.
     pub config: RwLock<VoyagerConfig>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, Display)]
 #[display("{} levels, {} orphans, {} banned IPs", levels.len(), orphans.len(), banned_ips.len())]
-struct VoyagerData {
+pub struct VoyagerData {
     /// Every key and its matching uploaded, validated level.
-    levels: DashMap<Key, Level<Validated>>,
+    pub levels: DashMap<Key, Level<Validated>>,
     /// Every key and its matching validated orphan (see [`orphanage`]).
-    orphans: DashMap<Key, Level<Validated>>,
+    pub orphans: DashMap<Key, Level<Validated>>,
     /// Every banned IP address. Bans are given out manually in the Web UI.
-    banned_ips: DashSet<IpAddr>,
+    pub banned_ips: DashSet<IpAddr>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, Display)]
@@ -181,13 +181,13 @@ impl AppState {
     /// Attempts to load a Voyager database from
     /// `voyager/levels.db`. If it fails (likely due
     /// to it not yet existing), it instead creates
-    /// a new one using `Self::new()`.
+    /// a default one.
     ///
-    /// # Panics
-    /// Panics if a Voyager database is found, but
-    /// deserializing it fails. Most likely, some
-    /// data structure had a breaking change (or
-    /// the file is corrupted).
+    /// # Errors
+    /// Returns an error if a Voyager database is
+    /// found, but deserializing it fails. Most
+    /// likely, some data structure had a breaking
+    /// change (or the file is corrupted).
     pub fn try_load() -> Result<SharedAppState> {
         debug!("App state is loading...");
         let data = VoyagerData::try_load()?;

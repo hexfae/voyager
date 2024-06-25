@@ -1291,7 +1291,7 @@ impl FromStr for ParsedObjects {
 impl Key {
     /// Generates a new [ULID](https://github.com/ulid/spec)
     /// key for a level.
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self(Ulid::new())
     }
 }
