@@ -15,7 +15,7 @@ use parking_lot::RwLock;
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 
-pub const VALID_LEVEL: &str = "1|V2FsbGtpY2s=|VGhlIGZpcnN0IHJlYWwgcHV6emxlIHRvIGJlIHVwbG9hZGVkIHRvIHRoZSBzZXJ2ZXJzISBUaXRsZSBpcyBhIGhpbnQuLi4=|bXNjX2JlZWNpcmNsZQ==|U2tpcmxleg==|2693408940|20240314|20240316|2|flexwa16wa04X2wa17ptX4flptX2st00flX3ptX6flX3ptflX8ptflX4ptX2wa10wa14ptflX4ptflX5ptwa03wa17flX5ptflX4ptX2wa06flX6ptX2flX3ptflwa06flX5ptX4flptX2wa13wa09wa10X12wa11|emX10cgemX16tnemgocc1emplemX21csemX16cf1emX11lvemcf1moemX7csemX31";
+const VALID_LEVEL: &str = "1|V2FsbGtpY2s=|VGhlIGZpcnN0IHJlYWwgcHV6emxlIHRvIGJlIHVwbG9hZGVkIHRvIHRoZSBzZXJ2ZXJzISBUaXRsZSBpcyBhIGhpbnQuLi4=|bXNjX2JlZWNpcmNsZQ==|U2tpcmxleg==|2693408940|20240314|20240316|2|flexwa16wa04X2wa17ptX4flptX2st00flX3ptX6flX3ptflX8ptflX4ptX2wa10wa14ptflX4ptflX5ptwa03wa17flX5ptflX4ptX2wa06flX6ptX2flX3ptflwa06flX5ptX4flptX2wa13wa09wa10X12wa11|emX10cgemX16tnemgocc1emplemX21csemX16cf1emX11lvemcf1moemX7csemX31";
 
 const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 168, 0, 1));
 

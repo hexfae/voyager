@@ -24,6 +24,27 @@ pub struct User {
     password_hash: String,
 }
 
+#[derive(Clone, Default, Serialize, Deserialize)]
+/// Web UI backend.
+pub struct Backend {
+    /// All Web UI users.
+    ///
+    /// Currently, there can only be one (an admin).
+    users: std::collections::HashMap<i64, User>,
+}
+
+#[derive(Clone, Deserialize)]
+/// A user's credentials, used for authentication.
+pub struct Credentials {
+    /// User's username.
+    pub username: String,
+    /// User's password.
+    ///
+    /// Note: This is never stored nor logged. This
+    /// is immediately hashed and then dropped.
+    pub password: String,
+}
+
 impl AuthUser for User {
     type Id = i64;
 
@@ -34,15 +55,6 @@ impl AuthUser for User {
     fn session_auth_hash(&self) -> &[u8] {
         self.password_hash.as_bytes()
     }
-}
-
-#[derive(Clone, Default, Serialize, Deserialize)]
-/// Web UI backend.
-pub struct Backend {
-    /// All Web UI users.
-    ///
-    /// Currently, there can only be one (an admin).
-    users: std::collections::HashMap<i64, User>,
 }
 
 impl Backend {
@@ -149,18 +161,6 @@ impl Backend {
         login.save();
         Ok(login)
     }
-}
-
-#[derive(Clone, Deserialize)]
-/// A user's credentials, used for authentication.
-pub struct Credentials {
-    /// User's username.
-    pub username: String,
-    /// User's password.
-    ///
-    /// Note: This is never stored nor logged. This
-    /// is immediately hashed and then dropped.
-    pub password: String,
 }
 
 #[async_trait]

@@ -11,6 +11,7 @@ use derive_more::{Display, FromStr};
 use image::{ImageBuffer, ImageFormat, Rgb};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use std::fmt::{Formatter, Result as FmtResult};
 use std::{convert::Infallible, io::Cursor, marker::PhantomData, net::IpAddr};
 use strum_macros::EnumString;
 use time::OffsetDateTime;
@@ -371,12 +372,6 @@ pub enum ObjectType {
 #[display("X{_0}")] // X prefix, e.g. 9 -> X9
 pub struct Multiplier(pub u8);
 
-/// An egg's message.
-///
-/// See [`ObjectType::Egg`] for details.
-#[derive(Debug, Display, Clone, Serialize, Deserialize)]
-pub struct Message(pub String);
-
 /// An object's direction.
 ///
 /// Encoded as a number between `0` and `3`. I currently don't
@@ -524,6 +519,17 @@ pub enum InputValue {
     EggCount,
 }
 
+/// An add statue's destroy value.
+///
+/// Add statues may take in a
+/// [Branefuck program](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck)
+/// and a destroy value. When the program's output matches the set
+/// destroy value, the Add statue will be destroyed.
+///
+/// See [Endless Void's page on Branefuck](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck) for further details.
+#[derive(Debug, Display, Clone, Serialize, Deserialize, FromStr)]
+pub struct DestroyValue(u32);
+
 /// A [Branefuck program](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck).
 ///
 /// Add statues are able to run
@@ -536,16 +542,11 @@ pub enum InputValue {
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct BranefuckProgram(String);
 
-/// An add statue's destroy value.
+/// An egg's message.
 ///
-/// Add statues may take in a
-/// [Branefuck program](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck)
-/// and a destroy value. When the program's output matches the set
-/// destroy value, the Add statue will be destroyed.
-///
-/// See [Endless Void's page on Branefuck](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck) for further details.
-#[derive(Debug, Display, Clone, Serialize, Deserialize, FromStr)]
-pub struct DestroyValue(u32);
+/// See [`ObjectType::Egg`] for details.
+#[derive(Debug, Display, Clone, Serialize, Deserialize)]
+pub struct Message(pub String);
 
 /// A (possibly invalid) Void Stranger level.
 ///
@@ -566,6 +567,61 @@ pub struct Level<State = Unvalidated> {
     /// The level's current validity state. See [`Validated`] and [`Unvalidated`].
     state: PhantomData<State>,
 }
+
+/// A level's data, as sent to
+/// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void).
+///
+/// The format is as follows:
+///
+/// `1|Zm9v|YmFy|bXNjXzAwMQ==|aGV4ZmFl|2685020332|20240304|20240304|0|ptX33exptX11flX2ptX10flX2ptX10flX2ptX33|emX61plemX62`
+///
+/// `version|name|description|music|author|brand|uploaded|edited|burdens|tiles|objects`
+///
+/// Note that a POST request from
+/// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)
+/// will omit the [`Uploaded`] and [`Edited`] fields, but keep the separators:
+///
+/// `1|Zm9v|YmFy|bXNjXzAwMQ==|aGV4ZmFl|2685020332|||0|ptX33exptX11flX2ptX10flX2ptX10flX2ptX33|emX61plemX62`
+///
+/// `version|name|description|music|author|brand|||burdens|tiles|objects`
+///
+/// And a PUT request will do the same, but append a separator and a
+/// [ULID](https://github.com/ulid/spec) key:
+///
+/// `1|Zm9v|YmFy|bXNjXzAwMQ==|aGV4ZmFl|2685020332|||0|ptX33exptX11flX2ptX10flX2ptX10flX2ptX33|emX61plemX62|01HR55PKF2BYRT1210Q67M8J34`
+///
+/// `version|name|description|music|author|brand|||burdens|tiles|objects|key`
+///
+/// See [`Version`], [`Name`], [`Description`], [`Music`],
+/// [`Author`], [`Brand`], [`Uploaded`], [`Edited`], [`Burdens`],
+/// [`Tiles`], [`Objects`], and [`Key`] for further details.
+#[derive(Debug, Display, Clone, Serialize, Deserialize)]
+pub struct Data(String);
+
+/// The default state of a level from POST and PUT requests.
+///
+/// In order to be inserted into the database, the level must first
+/// be parsed (and therefore validated) via [`Level::into_parsed()`].
+/// before going through [`Parsed::into_level()`].
+#[derive(Debug, Clone)]
+pub struct Unvalidated;
+
+/// The required state for a level being inserted into the database.
+///
+/// A level must go through [`Level::into_parsed()`] and then through
+/// [`Parsed::into_level()`].
+///
+/// A validated level has a few guarantees: It has a valid format version.
+/// Name, description, and author are all valid strings and lengths.
+/// Music is one of the configured allowed songs. Brand and burdens are valid
+/// 36-bit and 4-bit numbers, respectively. It has an upload and last edit
+/// date in `yyyymmdd` format.
+///
+/// However, the validity of the tiles and objects is not guaranteed. There
+/// is only a simple check that every character is in the configured list
+/// of allowed characters.
+#[derive(Debug, Clone)]
+pub struct Validated;
 
 /// A level's representation in the Web UI.
 #[allow(clippy::module_name_repetitions)]
@@ -627,61 +683,6 @@ pub struct Parsed {
     /// The IP address of the uploader.
     pub uploader: IpAddr,
 }
-
-/// A level's data, as sent to
-/// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void).
-///
-/// The format is as follows:
-///
-/// `1|Zm9v|YmFy|bXNjXzAwMQ==|aGV4ZmFl|2685020332|20240304|20240304|0|ptX33exptX11flX2ptX10flX2ptX10flX2ptX33|emX61plemX62`
-///
-/// `version|name|description|music|author|brand|uploaded|edited|burdens|tiles|objects`
-///
-/// Note that a POST request from
-/// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)
-/// will omit the [`Uploaded`] and [`Edited`] fields, but keep the separators:
-///
-/// `1|Zm9v|YmFy|bXNjXzAwMQ==|aGV4ZmFl|2685020332|||0|ptX33exptX11flX2ptX10flX2ptX10flX2ptX33|emX61plemX62`
-///
-/// `version|name|description|music|author|brand|||burdens|tiles|objects`
-///
-/// And a PUT request will do the same, but append a separator and a
-/// [ULID](https://github.com/ulid/spec) key:
-///
-/// `1|Zm9v|YmFy|bXNjXzAwMQ==|aGV4ZmFl|2685020332|||0|ptX33exptX11flX2ptX10flX2ptX10flX2ptX33|emX61plemX62|01HR55PKF2BYRT1210Q67M8J34`
-///
-/// `version|name|description|music|author|brand|||burdens|tiles|objects|key`
-///
-/// See [`Version`], [`Name`], [`Description`], [`Music`],
-/// [`Author`], [`Brand`], [`Uploaded`], [`Edited`], [`Burdens`],
-/// [`Tiles`], [`Objects`], and [`Key`] for further details.
-#[derive(Debug, Display, Clone, Serialize, Deserialize)]
-pub struct Data(String);
-
-/// The default state of a level from POST and PUT requests.
-///
-/// In order to be inserted into the database, the level must first
-/// be parsed (and therefore validated) via [`Level::into_parsed()`].
-/// before going through [`Parsed::into_level()`].
-#[derive(Debug, Clone)]
-pub struct Unvalidated;
-
-/// The required state for a level being inserted into the database.
-///
-/// A level must go through [`Level::into_parsed()`] and then through
-/// [`Parsed::into_level()`].
-///
-/// A validated level has a few guarantees: It has a valid format version.
-/// Name, description, and author are all valid strings and lengths.
-/// Music is one of the configured allowed songs. Brand and burdens are valid
-/// 36-bit and 4-bit numbers, respectively. It has an upload and last edit
-/// date in `yyyymmdd` format.
-///
-/// However, the validity of the tiles and objects is not guaranteed. There
-/// is only a simple check that every character is in the configured list
-/// of allowed characters.
-#[derive(Debug, Clone)]
-pub struct Validated;
 
 /// The level's format version.
 ///
@@ -938,7 +939,7 @@ impl<State> Level<State> {
             .collect_tuple()
             .ok_or(Error::InvalidStructure)?;
 
-        let version = Version::try_from(version, config)?;
+        let version = Version::from_str(version, config)?;
         let name = name.parse()?;
         let description = description.parse()?;
         let music = Music::from_str(music, config)?;
@@ -1053,7 +1054,7 @@ impl Version {
     /// # Errors
     /// Returns an error if the input wasn't a number, was too
     /// big, or was too small.
-    fn try_from(input: &str, config: &VoyagerConfig) -> Result<Self> {
+    fn from_str(input: &str, config: &VoyagerConfig) -> Result<Self> {
         let version = input
             .parse::<u8>()
             .map_err(|why| Error::InvalidVersion(NumberError::NotANumber(why)))?;
@@ -1305,7 +1306,7 @@ impl FromStr for Key {
 }
 
 impl Display for Tile {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         let id = &self.id;
         let tile_type = self
             .tile_type
@@ -1320,7 +1321,7 @@ impl Display for Tile {
 }
 
 impl Display for Object {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         let id = &self.id;
         let object_type = self
             .object_type
@@ -1335,7 +1336,7 @@ impl Display for Object {
 }
 
 impl Display for ObjectType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         let object_type = match self {
             Self::Direction { direction } => direction.to_string(),
             Self::AddStatue1 {
@@ -1376,7 +1377,7 @@ impl Display for ObjectType {
 }
 
 impl Display for ParsedTiles {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         let tiles = self
             .0
             .iter()
@@ -1388,7 +1389,7 @@ impl Display for ParsedTiles {
 }
 
 impl Display for ParsedObjects {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         let objects = self
             .0
             .iter()
@@ -1400,7 +1401,7 @@ impl Display for ParsedObjects {
 }
 
 impl Display for Parsed {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "Version: {}\nName: {}\nDescription: {}\nMusic: {}\nAuthor: {}\nBrand: {}\nBurdens: {}\nTiles: {}\nObjects: {}\nUploaded: {}\nEdited: {}", self.version, self.name, self.description, self.music, self.author, self.brand, self.burdens, self.tiles, self.objects, self.uploaded, self.edited)
     }
 }

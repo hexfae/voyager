@@ -154,17 +154,17 @@ pub enum Error {
     /// Returned by [`InputValue`] and [`Direction`].
     #[error("could not parse input: {0}")]
     Strum(#[from] strum::ParseError),
-    #[error("could not parse integer: {0}")]
     /// Integer parsing error.
     ///
     /// Returned by [`DestroyValue`].
+    #[error("could not parse integer: {0}")]
     ParseInt(#[from] std::num::ParseIntError),
-    #[error(transparent)]
     /// Used for "impossible" errors.
     ///
     /// This is used in the [`FromStr`] implementations for
     /// [`Tiles`] and [`Objects`], since implementing [`FromStr`]
     /// is apparently preferred to [`From<&str>`]
+    #[error(transparent)]
     Infallible(#[from] std::convert::Infallible),
 }
 

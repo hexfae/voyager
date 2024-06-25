@@ -108,6 +108,21 @@ fn object_id(input: &str) -> IResult<&str, ObjectId> {
     map_res(take_while_m_n(2, 2, is_lowercase), ObjectId::from_str)(input)
 }
 
+/// Attempts to parse the input as a [`TileType`].
+///
+/// Examples of valid input: `03`, `17`.
+///
+/// A [`TileType`] is simply a wrapped [`u8`]. As such, any u8 is a valid
+/// [`TileType`]. However, the largeset [`TileType`] found in the wild is
+/// is `17` (found as `wa17`).
+fn tile_type(input: &str) -> IResult<&str, Option<TileType>> {
+    let (remaining, tile_type) = take_while(is_digit)(input)?;
+    let tile_type = tile_type.parse::<u8>().ok();
+    tile_type.map_or(Ok((remaining, None)), |tile_type| {
+        Ok((remaining, Some(TileType(tile_type))))
+    })
+}
+
 /// Attempts to parse the input as an [`ObjectType`].
 ///
 /// Examples of valid inputs:
@@ -121,6 +136,49 @@ fn object_type(input: &str) -> IResult<&str, Option<ObjectType>> {
     opt(alt((add_statue, egg, direction)))(input)
 }
 
+/// Attempts to parse the input as a [`Multiplier`].
+///
+/// Examples of valid input: `X3`, `X17`.
+///
+/// A [`Multiplier`] is simply a wrapped [`u8`]. As such, any u8 is a valid
+/// [`Multiplier`]. However, multipliers are prefixed by `X`, so the input
+/// must begin with `X` in order to be valid.
+fn multiplier(input: &str) -> IResult<&str, Option<Multiplier>> {
+    let (remaining, multiplier) = opt(preceded(char('X'), take_while(is_digit)))(input)?;
+    multiplier.map_or(Ok((remaining, None)), |multiplier| {
+        let multiplier = multiplier.parse::<u8>().ok();
+        multiplier.map_or(Ok((remaining, None)), |multiplier| {
+            Ok((remaining, Some(Multiplier(multiplier))))
+        })
+    })
+}
+
+/// Attempts to parse the input as either type of Add statue.
+///
+/// See [`add_statue1()`] and [`add_statue2()`] for details.
+fn add_statue(input: &str) -> IResult<&str, ObjectType> {
+    alt((add_statue1, add_statue2))(input)
+}
+
+/// Attempts to parse the input as an [`ObjectType::Egg`].
+///
+/// The first character must be a number (may be 0). This number decides how many
+/// Base64-encoded, `!`-terminated messages follow it.
+///
+/// Examples of valid input:
+/// 1. `0`
+/// 2. `1aGVsbG8=!`
+/// 3. `4aGk=!aGV5!eW8=!aGFoYQ==!`
+fn egg(input: &str) -> IResult<&str, ObjectType> {
+    let (remaining, number_of_messages) = map_res(take(1u8), |n: &str| n.parse::<usize>())(input)?;
+    let (remaining, messages) = count(
+        take_until_termination_character_then_decode_base64,
+        number_of_messages,
+    )(remaining)?;
+    let messages = ObjectType::egg(messages);
+    Ok((remaining, messages))
+}
+
 /// Attempts to parse the input as an [`ObjectType::Direction`].
 ///
 /// It attempts to take as many digits as possible (at least 1) and
@@ -131,40 +189,6 @@ fn object_type(input: &str) -> IResult<&str, Option<ObjectType>> {
 /// See [`ObjectType::direction()`] for details.
 fn direction(input: &str) -> IResult<&str, ObjectType> {
     map_res(take_while1(is_digit), ObjectType::direction)(input)
-}
-
-/// Attempts to take characters until `!` is found.
-///
-/// Example of valid input: `[->-<]>?.!`
-///
-/// This is used for the
-/// [Branefuck program](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck)
-/// parameter of type 2 Add statues.
-fn take_until_termination_character(input: &str) -> IResult<&str, &str> {
-    terminated(take_until1("!"), char('!'))(input)
-}
-
-/// Attempts to take characters until `!` is found, then Base64-decodes them.
-///
-/// Example of valid input: `cGxheWVyX3g=!`
-///
-/// This is used in many places. For example, most parameters of Add statues
-/// are `!`-terminated, as well as all messages of eggs.
-fn take_until_termination_character_then_decode_base64(input: &str) -> IResult<&str, String> {
-    terminated(map_res(take_until1("!"), decode_base64), char('!'))(input)
-}
-
-/// Appends a [`&str`] to a [`Vec`] of [`String`]s.
-///
-/// This is a workaround. In [`add_statue2()`], a `(Vec<String>, &str)` is returned,
-/// but `ObjectType::add_statue()` takes in a `Vec<String>`. This function simply turns
-/// the `(Vec<String>, &str)` into `Vec<String>` by appending the `&str`. Additionally,
-/// `nom`'s `map_res()` function takes in a function that returns a `Result<T, E>`, so
-/// this function wraps the result in a `Result<T, E>`.
-// map_res needs a function that returns a result
-#[allow(clippy::unnecessary_wraps)]
-fn append_branefuck_to_parameters(input: (Vec<String>, &str)) -> Result<Vec<String>> {
-    Ok([input.0, vec![input.1.into()]].concat())
 }
 
 /// Attempts to parse the input as an [`ObjectType::AddStatue1`].
@@ -206,30 +230,38 @@ fn add_statue2(input: &str) -> IResult<&str, ObjectType> {
     )(input)
 }
 
-/// Attempts to parse the input as either type of Add statue.
+/// Appends a [`&str`] to a [`Vec`] of [`String`]s.
 ///
-/// See [`add_statue1()`] and [`add_statue2()`] for details.
-fn add_statue(input: &str) -> IResult<&str, ObjectType> {
-    alt((add_statue1, add_statue2))(input)
+/// This is a workaround. In [`add_statue2()`], a `(Vec<String>, &str)` is returned,
+/// but `ObjectType::add_statue()` takes in a `Vec<String>`. This function simply turns
+/// the `(Vec<String>, &str)` into `Vec<String>` by appending the `&str`. Additionally,
+/// `nom`'s `map_res()` function takes in a function that returns a `Result<T, E>`, so
+/// this function wraps the result in a `Result<T, E>`.
+// map_res needs a function that returns a result
+#[allow(clippy::unnecessary_wraps)]
+fn append_branefuck_to_parameters(input: (Vec<String>, &str)) -> Result<Vec<String>> {
+    Ok([input.0, vec![input.1.into()]].concat())
 }
 
-/// Attempts to parse the input as an [`ObjectType::Egg`].
+/// Attempts to take characters until `!` is found.
 ///
-/// The first character must be a number (may be 0). This number decides how many
-/// Base64-encoded, `!`-terminated messages follow it.
+/// Example of valid input: `[->-<]>?.!`
 ///
-/// Examples of valid input:
-/// 1. `0`
-/// 2. `1aGVsbG8=!`
-/// 3. `4aGk=!aGV5!eW8=!aGFoYQ==!`
-fn egg(input: &str) -> IResult<&str, ObjectType> {
-    let (remaining, number_of_messages) = map_res(take(1u8), |n: &str| n.parse::<usize>())(input)?;
-    let (remaining, messages) = count(
-        take_until_termination_character_then_decode_base64,
-        number_of_messages,
-    )(remaining)?;
-    let messages = ObjectType::egg(messages);
-    Ok((remaining, messages))
+/// This is used for the
+/// [Branefuck program](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck)
+/// parameter of type 2 Add statues.
+fn take_until_termination_character(input: &str) -> IResult<&str, &str> {
+    terminated(take_until1("!"), char('!'))(input)
+}
+
+/// Attempts to take characters until `!` is found, then Base64-decodes them.
+///
+/// Example of valid input: `cGxheWVyX3g=!`
+///
+/// This is used in many places. For example, most parameters of Add statues
+/// are `!`-terminated, as well as all messages of eggs.
+fn take_until_termination_character_then_decode_base64(input: &str) -> IResult<&str, String> {
+    terminated(map_res(take_until1("!"), decode_base64), char('!'))(input)
 }
 
 /// Attempts to Base64-decode the input.
@@ -245,38 +277,6 @@ fn decode_base64(input: &str) -> Result<String> {
             .map_err(|_| Error::InvalidObjects)?,
     )
     .map_err(|_| Error::InvalidObjects)
-}
-
-/// Attempts to parse the input as a [`TileType`].
-///
-/// Examples of valid input: `03`, `17`.
-///
-/// A [`TileType`] is simply a wrapped [`u8`]. As such, any u8 is a valid
-/// [`TileType`]. However, the largeset [`TileType`] found in the wild is
-/// is `17` (found as `wa17`).
-fn tile_type(input: &str) -> IResult<&str, Option<TileType>> {
-    let (remaining, tile_type) = take_while(is_digit)(input)?;
-    let tile_type = tile_type.parse::<u8>().ok();
-    tile_type.map_or(Ok((remaining, None)), |tile_type| {
-        Ok((remaining, Some(TileType(tile_type))))
-    })
-}
-
-/// Attempts to parse the input as a [`Multiplier`].
-///
-/// Examples of valid input: `X3`, `X17`.
-///
-/// A [`Multiplier`] is simply a wrapped [`u8`]. As such, any u8 is a valid
-/// [`Multiplier`]. However, multipliers are prefixed by `X`, so the input
-/// must begin with `X` in order to be valid.
-fn multiplier(input: &str) -> IResult<&str, Option<Multiplier>> {
-    let (remaining, multiplier) = opt(preceded(char('X'), take_while(is_digit)))(input)?;
-    multiplier.map_or(Ok((remaining, None)), |multiplier| {
-        let multiplier = multiplier.parse::<u8>().ok();
-        multiplier.map_or(Ok((remaining, None)), |multiplier| {
-            Ok((remaining, Some(Multiplier(multiplier))))
-        })
-    })
 }
 
 /// Tests if the character is an ASCII digit: `0-9`.
