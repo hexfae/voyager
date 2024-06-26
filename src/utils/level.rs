@@ -1058,12 +1058,12 @@ impl Version {
         let version = input
             .parse::<u8>()
             .map_err(|why| Error::InvalidVersion(NumberError::NotANumber(why)))?;
-        let too_big = version > config.format_version.0;
+        let too_big = version > config.latest_format_version.0;
         let is_zero = version == 0;
 
         if too_big {
             return Err(Error::InvalidVersion(NumberError::TooBig {
-                max: u64::from(config.format_version.0),
+                max: u64::from(config.latest_format_version.0),
                 found: u64::from(version),
             }));
         }

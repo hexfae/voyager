@@ -15,5 +15,5 @@ pub async fn version(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> String {
     info!("Version check sent by {}", addr.ip());
-    db.config.read().endless_void_version.clone().0
+    db.config.read().latest_endless_void_version.clone().0
 }

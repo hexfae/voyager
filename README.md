@@ -10,6 +10,7 @@ Besides the standard features you'd expect from a server/database (CRUD), Voyage
 - Extensive logging
 - Comprehensive documentation (100% coverage)
 - Tests (soon)
+- Optional Discord webhook for notifying of level uploads
 - A web UI
 - 🔥🚀🦀
 

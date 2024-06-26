@@ -107,25 +107,22 @@ pub struct VoyagerData {
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, Display)]
-#[display("{} allowed songs, format version {}, Endless Void version {}", allowed_songs.0.len(), format_version, endless_void_version)]
+#[display("{} allowed songs, format version {}, Endless Void version {}", allowed_songs.0.len(), latest_format_version, latest_endless_void_version)]
 pub struct VoyagerConfig {
-    /// All available music choices in Void Stranger.
-    ///
-    /// See [`DEFAULT_ALLOWED_SONGS`] for the default list.
+    /// See [`AllowedSongs`].
     #[serde(default)]
     pub allowed_songs: AllowedSongs,
-    /// The current highest format version used by
-    /// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void).
-    ///
-    /// At the time of writing (2024-06-25), this is `2`.
+    /// See [`LatestFormatVersion`].
     #[serde(default)]
-    pub format_version: FormatVersion,
-    /// The version number of the current latest release of
-    /// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void).
-    ///
-    /// At the time of writing (2024-06-25), this is `0.89`.
+    #[serde(alias = "format_version")]
+    pub latest_format_version: LatestFormatVersion,
+    /// See [`LatestEndlessVoidVersion`].
     #[serde(default)]
-    pub endless_void_version: EndlessVoidVersion,
+    #[serde(alias = "endless_void_version")]
+    pub latest_endless_void_version: LatestEndlessVoidVersion,
+    /// See [`DiscordWebhookUrl`].
+    #[serde(default)]
+    pub discord_webhook_url: DiscordWebhookUrl,
 }
 
 /// The list of allowed songs.
@@ -138,7 +135,7 @@ pub struct AllowedSongs(pub Vec<String>);
 ///
 /// See [`DEFAULT_FORMAT_VERSION`] for the default.
 #[derive(Debug, Serialize, Deserialize, Display)]
-pub struct FormatVersion(pub u8);
+pub struct LatestFormatVersion(pub u8);
 
 /// The latest
 /// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)
@@ -146,7 +143,18 @@ pub struct FormatVersion(pub u8);
 ///
 /// See [`DEFAULT_ENDLESS_VOID_VERSION`] for the default.
 #[derive(Debug, Serialize, Deserialize, Display, Clone)]
-pub struct EndlessVoidVersion(pub String);
+pub struct LatestEndlessVoidVersion(pub String);
+
+/// The Discord webhook URL used for level upload messages.
+///
+/// Voyager can optionally send a Discord message using
+/// the provided webhook URL when a level is uploaded.
+///
+/// The default is an empty string (`""`), which will skip
+/// trying to send the message altogether. A webhook URL must
+/// be set through the config.
+#[derive(Debug, Display, Default, Serialize, Deserialize)]
+pub struct DiscordWebhookUrl(String);
 
 /// The old, legacy, deprecated, etc. Voyager config.
 ///
@@ -268,6 +276,8 @@ impl AppState {
         self.data.banned_ips.contains(input)
     }
 
+    /// Adopts an orphan with the input key.
+    ///
     /// Moves a level and its key from the orphans list
     /// to the levels list, if found.
     pub fn adopt_orphan(&self, input: &Key) -> Result<()> {
@@ -276,8 +286,46 @@ impl AppState {
             .orphans
             .remove(input)
             .ok_or(Error::LevelNotFound)?;
+        self.send_discord_message(level.clone());
         self.insert(level);
         Ok(())
+    }
+
+    /// Sends a Discord message about the input level.
+    ///
+    /// If set in the config, attempt to send a Discord message using
+    /// the configured webhook URL with information about the level.
+    ///
+    /// This is used to optionally notify a Discord channel when a level
+    /// is uploaded to Voyager.
+    fn send_discord_message(&self, level: Level<Validated>) {
+        let webhook_url = self.config.read().discord_webhook_url.to_string();
+        if webhook_url.is_empty() {
+            return;
+        }
+        let Ok(parsed) = level.into_parsed(&self.config.read()) else {
+            warn!("could not parse level for some reason?");
+            return;
+        };
+        let level = IndexLevel::new(parsed);
+        let embed = ureq::json!({
+            "embeds": [{
+                "title": level.name,
+                "description": level.description,
+                "author": {
+                    "name": level.author
+                }
+            }]
+        })
+        .to_string();
+        tokio::task::spawn_blocking(move || {
+            let message = ureq::post(&webhook_url)
+                .set("Content-Type", "application/json")
+                .send_string(&embed);
+            if let Err(why) = message {
+                warn!("could not send discord webhook message on level upload! {why}");
+            }
+        });
     }
 
     /// Get a clone of a level from the database, if it exists.
@@ -563,8 +611,9 @@ impl From<LegacyVoyagerConfig> for VoyagerConfig {
     fn from(input: LegacyVoyagerConfig) -> Self {
         Self {
             allowed_songs: AllowedSongs(input.allowed_songs),
-            format_version: FormatVersion(input.format_version),
-            endless_void_version: EndlessVoidVersion(input.endless_void_version),
+            latest_format_version: LatestFormatVersion(input.format_version),
+            latest_endless_void_version: LatestEndlessVoidVersion(input.endless_void_version),
+            ..Default::default()
         }
     }
 }
@@ -582,13 +631,13 @@ impl Default for AllowedSongs {
     }
 }
 
-impl Default for FormatVersion {
+impl Default for LatestFormatVersion {
     fn default() -> Self {
         Self(DEFAULT_FORMAT_VERSION)
     }
 }
 
-impl Default for EndlessVoidVersion {
+impl Default for LatestEndlessVoidVersion {
     fn default() -> Self {
         Self(DEFAULT_ENDLESS_VOID_VERSION.into())
     }
