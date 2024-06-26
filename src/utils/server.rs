@@ -120,9 +120,9 @@ pub struct VoyagerConfig {
     #[serde(default)]
     #[serde(alias = "endless_void_version")]
     pub latest_endless_void_version: LatestEndlessVoidVersion,
-    /// See [`DiscordWebhookUrl`].
+    /// See [`DiscordWebhookUrls`].
     #[serde(default)]
-    pub discord_webhook_url: DiscordWebhookUrl,
+    pub discord_webhook_urls: DiscordWebhookUrls,
 }
 
 /// The list of allowed songs.
@@ -145,16 +145,17 @@ pub struct LatestFormatVersion(pub u8);
 #[derive(Debug, Serialize, Deserialize, Display, Clone)]
 pub struct LatestEndlessVoidVersion(pub String);
 
-/// The Discord webhook URL used for level upload messages.
+/// The list of Discord webhook URLs used for level upload messages.
 ///
 /// Voyager can optionally send a Discord message using
-/// the provided webhook URL when a level is uploaded.
+/// the provided webhook URLs when a level is uploaded.
 ///
-/// The default is an empty string (`""`), which will skip
-/// trying to send the message altogether. A webhook URL must
-/// be set through the config.
-#[derive(Debug, Display, Default, Serialize, Deserialize)]
-pub struct DiscordWebhookUrl(String);
+/// The default is an empty [`Vec`], which will skip
+/// trying to send the message altogether. Webhook URLs must
+/// be set through the config. Voyager will attempt to send
+/// to every configured webhook URL.
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct DiscordWebhookUrls(Vec<String>);
 
 /// The old, legacy, deprecated, etc. Voyager config.
 ///
@@ -294,13 +295,13 @@ impl AppState {
     /// Sends a Discord message about the input level.
     ///
     /// If set in the config, attempt to send a Discord message using
-    /// the configured webhook URL with information about the level.
+    /// every configured webhook URL with information about the level.
     ///
-    /// This is used to optionally notify a Discord channel when a level
-    /// is uploaded to Voyager.
+    /// This is used to optionally notify one or more Discord channels
+    /// when a level is uploaded to Voyager.
     fn send_discord_message(&self, level: Level<Validated>) {
-        let webhook_url = self.config.read().discord_webhook_url.to_string();
-        if webhook_url.is_empty() {
+        let webhook_urls = self.config.read().discord_webhook_urls.0.clone();
+        if webhook_urls.is_empty() {
             return;
         }
         let Ok(parsed) = level.into_parsed(&self.config.read()) else {
@@ -318,14 +319,17 @@ impl AppState {
             }]
         })
         .to_string();
-        tokio::task::spawn_blocking(move || {
-            let message = ureq::post(&webhook_url)
-                .set("Content-Type", "application/json")
-                .send_string(&embed);
-            if let Err(why) = message {
-                warn!("could not send discord webhook message on level upload! {why}");
-            }
-        });
+        for url in webhook_urls {
+            let embed = embed.clone();
+            tokio::task::spawn_blocking(move || {
+                let message = ureq::post(&url)
+                    .set("Content-Type", "application/json")
+                    .send_string(&embed);
+                if let Err(why) = message {
+                    warn!("could not send discord webhook message on level upload! {why}");
+                }
+            });
+        }
     }
 
     /// Get a clone of a level from the database, if it exists.
