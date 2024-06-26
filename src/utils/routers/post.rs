@@ -43,6 +43,9 @@ pub async fn post(
         }
     };
     debug!("Level parsed.\n{parsed}");
+
+    db.check_for_name_and_author_collisions(&parsed.name.0, &parsed.author.0)?;
+
     parsed.set_dates_to_now();
     info!("POST success: {} by {}", parsed.name, parsed.author);
     debug!("{parsed}");
@@ -63,9 +66,6 @@ pub async fn post(
 /// level into the level list if successful. This is to combat
 /// the possible immediate creation of orphan levels (ones
 /// where the key is lost).
-///
-/// Yes, this whole thing is probably unnecessary, but
-/// it was requested by the Endless Void developer.
 ///
 /// Returns 200 OK if successful. Returns 400 BAD REQUEST on
 /// invalid key. Returns 404 NOT FOUND on valid key, but

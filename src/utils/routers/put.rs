@@ -52,6 +52,8 @@ pub async fn put(
     };
     debug!("Level parsed.\n{parsed}.");
 
+    db.check_for_name_and_author_collisions(&parsed.name.0, &parsed.author.0)?;
+
     let old_level = match db.get(&key) {
         Ok(level) => level,
         Err(why) => {

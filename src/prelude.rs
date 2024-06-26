@@ -4,14 +4,14 @@ pub use crate::error::NumberError;
 pub use crate::error::StringError;
 pub use crate::utils::level::Key;
 pub use crate::utils::level::Level;
-pub use crate::utils::server::Backend;
-pub use crate::utils::server::Credentials;
 pub use crate::utils::server::VoyagerConfig;
+pub use crate::utils::webui::backend::Backend;
+pub use crate::utils::webui::backend::Credentials;
 /// Authentication session used for
 /// logging in to the Web UI.
 pub type AuthSession = axum_login::AuthSession<Backend>;
 /// The common result type used throughout
 /// Voyager, using Voyager's [`Error`].
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 /// Thread-safe app state, used across Voyager.
 pub type SharedAppState = std::sync::Arc<crate::utils::server::AppState>;

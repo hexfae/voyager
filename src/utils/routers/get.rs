@@ -8,7 +8,7 @@ use axum::{
     extract::{ConnectInfo, Path, State},
     http::StatusCode,
 };
-use std::net::SocketAddr;
+use std::{net::SocketAddr, str::FromStr};
 use tracing::info;
 
 /// Returns a comma-separated list of all levels stored in the database.
@@ -31,10 +31,10 @@ pub async fn get(
 // TODO: candidate for refactoring
 /// Validates the existence of levels in the database.
 ///
-/// On startup, Endless Void sends a GET request to `/voyager/:keys`,
-/// where `keys` is a comma-separated list of level keys. Voyager then
-/// returns a sequence of 0's and 1's according to the existence of the
-/// levels matching those keys.
+/// On startup, [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)
+/// sends a GET request to `/voyager/:keys`, where `keys` is a comma-separated list
+/// of level keys. Voyager then returns a sequence of 0's and 1's according to the
+/// existence of the levels matching those keys.
 ///
 /// For example, for `key1,key2,key3,key4`, if `key1`, `key2`, and `key4`
 /// are valid, but `key3` is not, Voyager will return 200 OK and `1101`.
@@ -54,7 +54,7 @@ pub async fn levels_exist(
     info!("GET levels check sent by {addr}: {input_keys_len} keys");
     let parsed_keys = split_keys
         .into_iter()
-        .filter_map(Key::parse)
+        .filter_map(|k| Key::from_str(k).ok())
         .collect::<Vec<Key>>();
     if parsed_keys.len() != input_keys_len {
         let invalid_keys_len = input_keys_len - parsed_keys.len();

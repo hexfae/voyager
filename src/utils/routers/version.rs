@@ -1,4 +1,6 @@
-//! Return the latest Endless Void version number.
+//! Return the latest
+//! [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)
+//! version number.
 //!
 use crate::prelude::*;
 use axum::extract::{ConnectInfo, State};
@@ -13,5 +15,5 @@ pub async fn version(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> String {
     info!("Version check sent by {}", addr.ip());
-    db.config.read().endless_void_version.clone()
+    db.config.read().latest_endless_void_version.clone().0
 }

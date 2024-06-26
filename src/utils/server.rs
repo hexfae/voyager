@@ -1,12 +1,12 @@
 //! Contains [`AppState`], related methods, and
 //! various Axum server-related functions.
+
 use crate::prelude::*;
 use crate::utils::{
-    level::{IndexLevel, Validated},
+    level::{Author, IndexLevel, Name, Validated},
     routers, webui,
 };
 use axum::{
-    async_trait,
     http::StatusCode,
     routing::{any, delete, get, post, put},
     Router,
@@ -14,13 +14,13 @@ use axum::{
 use axum_login::login_required;
 use axum_login::{
     tower_sessions::{MemoryStore, SessionManagerLayer},
-    AuthManagerLayerBuilder, AuthUser, AuthnBackend, UserId,
+    AuthManagerLayerBuilder,
 };
+use base64::Engine;
 use dashmap::{DashMap, DashSet};
 use derive_more::Display;
-use inquire::{min_length, Password, Text};
+use itertools::Itertools;
 use parking_lot::RwLock;
-use password_auth::{generate_hash, verify_password};
 use ron::ser::PrettyConfig;
 use serde::{Deserialize, Serialize};
 use std::fs::read_to_string;
@@ -37,6 +37,8 @@ use tower_http::timeout::TimeoutLayer;
 use tracing::{debug, error, info, warn};
 
 // for documentation
+#[allow(unused_imports)]
+use crate::utils::parser;
 #[allow(unused_imports)]
 use crate::utils::{level::Data, routers::post::orphanage, routers::version::version};
 #[allow(unused_imports)]
@@ -66,238 +68,137 @@ const DEFAULT_ALLOWED_SONGS: [&str; 18] = [
     "msc_test2",
 ];
 
-/// The default set of characters that are allowed as objects and tiles.
-///
-/// The characters allowed are [`BASE64_STANDARD`] and the Brainfuck symbols `+/=!<>-[]?` .
-pub const DEFAULT_ALLOWED_CHARACTERS: &str =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=!<>-[]?";
-
 /// The default format version used by Voyager.
 ///
-/// At the time of writing (2024-06-02), this is either `1` or `2`.
+/// At the time of writing (2024-06-25), this is either `1` or `2`.
 ///
-/// The only difference between these two versions is that version `2` allows Brainfuck symbols.
+/// The only difference between these two versions is that version `2`'s Add statues support
+/// [Branefuck](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck).
 const DEFAULT_FORMAT_VERSION: u8 = 2;
 
-/// The default latest version of Endless Void.
+/// The default latest version of
+/// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void).
 ///
-/// This is used to inform Endless Void users of new updates through [`version`].
+/// This is used to inform
+/// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)
+/// users of new updates through [`version`].
 ///
-/// As of 2024-06-02, this is `0.875`.
-const DEFAULT_ENDLESS_VOID_VERSION: &str = "0.875";
+/// As of 2024-06-25, this is `0.89`.
+const DEFAULT_ENDLESS_VOID_VERSION: &str = "0.89";
 
 /// Voyager's data and configuration.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AppState {
     /// Voyager's data (levels, orphans, banned IPs).
-    data: VoyagerData,
+    pub data: VoyagerData,
     /// Voyager's configuration options.
     pub config: RwLock<VoyagerConfig>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, Display)]
 #[display("{} levels, {} orphans, {} banned IPs", levels.len(), orphans.len(), banned_ips.len())]
-struct VoyagerData {
+pub struct VoyagerData {
     /// Every key and its matching uploaded, validated level.
-    levels: DashMap<Key, Level<Validated>>,
+    pub levels: DashMap<Key, Level<Validated>>,
     /// Every key and its matching validated orphan (see [`orphanage`]).
-    orphans: DashMap<Key, Level<Validated>>,
+    pub orphans: DashMap<Key, Level<Validated>>,
     /// Every banned IP address. Bans are given out manually in the Web UI.
-    banned_ips: DashSet<IpAddr>,
+    pub banned_ips: DashSet<IpAddr>,
 }
 
-impl VoyagerData {
-    /// Attempts to load a Voyager database from `voyager/levels.db`.
-    ///
-    /// If reading the file fails (likely due to it not yet existing),
-    /// it instead creates a new one using `Self::default()`, which
-    /// creates an empty database.
-    ///
-    /// # Errors
-    /// - [`Error::Bincode`] if deserializing the file fails.
-    fn try_load() -> Result<Self> {
-        debug!("Database is opening...");
-        read("voyager/levels.db").map_or_else(
-            |_| {
-                info!("Existing database not found! One will be created.");
-                Ok(Self::default())
-            },
-            |bytes| {
-                debug!("Database opened. Database is loading...");
-                match bincode::deserialize(&bytes) {
-                    Err(why) => {
-                        error!("Database could not be loaded! {why}");
-                        Err(why.into())
-                    }
-                    Ok(data) => {
-                        info!("Database loaded: {data}.");
-                        Ok(data)
-                    }
-                }
-            },
-        )
-    }
-
-    /// Attempts to save itself to `voyager/levels.db`.
-    ///
-    /// If an error occurs, it will log a warning and keep running.
-    // it is really not that complex
-    #[allow(clippy::cognitive_complexity)]
-    pub fn save(&self) {
-        debug!("Database is serializing...");
-        match bincode::serialize(&self) {
-            Err(why) => warn!("Database could not be serialized! {why}"),
-            Ok(bytes) => {
-                let len = bytes.len();
-                debug!("Database serialized. Database is saving...");
-                match write("voyager/levels.db", bytes) {
-                    Ok(()) => debug!("Database saved. {len} bytes."),
-                    Err(why) => warn!("Database could not be saved! {why}"),
-                };
-            }
-        };
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Display)]
-#[display("{} allowed songs, format version {}, Endless Void version {}", allowed_songs.len(), format_version, endless_void_version)]
+#[derive(Debug, Default, Serialize, Deserialize, Display)]
+#[display("{} allowed songs, format version {}, Endless Void version {}", allowed_songs.0.len(), latest_format_version, latest_endless_void_version)]
 pub struct VoyagerConfig {
-    /// All available music choices in Void Stranger.
-    ///
-    /// See [`DEFAULT_ALLOWED_SONGS`] for the default list.
-    pub allowed_songs: Vec<String>,
-    /// All possible characters from Endless Void's black hole format.
-    ///
-    /// Currently, there is no (easy) way to check if a level is valid.
-    /// Therefore, this is the best (easiest) way to check a level's validity.
-    #[serde(default = "default_allowed_characters")]
-    pub allowed_characters: String,
-    /// The current highest format version used by Endless Void.
-    ///
-    /// At the time of writing (2024-05-14), this is `2`.
-    pub format_version: u8,
-    /// The version number of the current latest release of Endless Void.
-    ///
-    /// At the time of writing (2024-05-14), this is `0.875`.
-    pub endless_void_version: String,
+    /// See [`AllowedSongs`].
+    #[serde(default)]
+    pub allowed_songs: AllowedSongs,
+    /// See [`LatestFormatVersion`].
+    #[serde(default)]
+    #[serde(alias = "format_version")]
+    pub latest_format_version: LatestFormatVersion,
+    /// See [`LatestEndlessVoidVersion`].
+    #[serde(default)]
+    #[serde(alias = "endless_void_version")]
+    pub latest_endless_void_version: LatestEndlessVoidVersion,
+    /// See [`DiscordWebhookUrls`].
+    #[serde(default)]
+    pub discord_webhook_urls: DiscordWebhookUrls,
 }
 
-// this function is just needed as a default for allowed_characters of VoyagerConfig
-fn default_allowed_characters() -> String {
-    DEFAULT_ALLOWED_CHARACTERS.into()
-}
+/// The list of allowed songs.
+///
+/// See [`DEFAULT_ALLOWED_SONGS`] for the list of defaults.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AllowedSongs(pub Vec<String>);
 
-impl VoyagerConfig {
-    /// Attempts to save itself to `voyager/config.ron`.
-    ///
-    /// If an error occurs, it will log a warning and keep running.
-    // it is really not that complex
-    #[allow(clippy::cognitive_complexity)]
-    pub fn save(&self) {
-        debug!("Config is serializing...");
-        match ron::ser::to_string_pretty(&self, PrettyConfig::default()) {
-            Err(why) => warn!("Config could not be serialized! {why}"),
-            Ok(string) => {
-                debug!("Config serialized. Config is saving...");
-                let len = string.len();
-                match write("voyager/config.ron", string) {
-                    Ok(()) => debug!("Config saved. {len} bytes."),
-                    Err(why) => warn!("Config could not be saved! {why}"),
-                };
-            }
-        };
-    }
+/// The latest level format version.
+///
+/// See [`DEFAULT_FORMAT_VERSION`] for the default.
+#[derive(Debug, Serialize, Deserialize, Display)]
+pub struct LatestFormatVersion(pub u8);
 
-    /// Attempts to load a Voyager config from `voyager/config.ron`.
-    ///
-    /// If it fails (likely due to it not yet existing), it
-    /// instead creates a new one using `Self::default()`,
-    /// which will use a set of at-the-time correct defaults.
-    ///
-    /// # Errors
-    /// Returns an error if a Voyager config is found, but
-    /// deserializing it fails. Most likely, some data structure
-    /// had a breaking change (or the file is corrupted).
-    pub fn try_load() -> Result<Self> {
-        debug!("Config is opening...");
-        read_to_string("voyager/config.ron").map_or_else(
-            |_| {
-                info!("Existing config not found! One will be created.");
-                let config = Self::default();
-                config.save();
-                Ok(config)
-            },
-            |string| {
-                debug!("Config opened. Config is loading...");
-                match ron::from_str::<Self>(&string) {
-                    Err(why) => {
-                        error!("Config could not be loaded! {why}");
-                        Err(why.into())
-                    }
-                    Ok(config) => {
-                        info!("Config loaded: {config}.");
-                        config.save();
-                        Ok(config)
-                    }
-                }
-            },
-        )
-    }
+/// The latest
+/// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)
+/// version.
+///
+/// See [`DEFAULT_ENDLESS_VOID_VERSION`] for the default.
+#[derive(Debug, Serialize, Deserialize, Display, Clone)]
+pub struct LatestEndlessVoidVersion(pub String);
 
-    /// Attempts to load a Voyager config from `voyager/config.ron`.
-    ///
-    /// This function is used for hot reloading the config
-    /// while Voyager is running.
-    ///
-    /// If it fails (likely due to the configuration being
-    /// changed to something invalid), it logs it and keeps
-    /// running without switching to the new config.
-    pub fn try_reload() -> Option<Self> {
-        debug!("Config is opening for hot reload...");
-        read_to_string("voyager/config.ron").map_or_else(
-            |why| {
-                warn!("Config could not be opened for hot reload! {why}");
-                None
-            },
-            |string| {
-                debug!("Config opened. Config is loading...");
-                match ron::from_str(&string) {
-                    Err(why) => {
-                        warn!("Config could not be loaded! {why}");
-                        None
-                    }
-                    Ok(config) => {
-                        info!("Config reloaded: {config}");
-                        Some(config)
-                    }
-                }
-            },
-        )
-    }
-}
+/// The list of Discord webhook URLs used for level upload messages.
+///
+/// Voyager can optionally send a Discord message using
+/// the provided webhook URLs when a level is uploaded.
+///
+/// The default is an empty [`Vec`], which will skip
+/// trying to send the message altogether. Webhook URLs must
+/// be set through the config. Voyager will attempt to send
+/// to every configured webhook URL.
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct DiscordWebhookUrls(Vec<String>);
 
-impl Default for VoyagerConfig {
-    fn default() -> Self {
-        Self {
-            allowed_songs: DEFAULT_ALLOWED_SONGS.map(ToString::to_string).to_vec(),
-            allowed_characters: DEFAULT_ALLOWED_CHARACTERS.into(),
-            format_version: DEFAULT_FORMAT_VERSION,
-            endless_void_version: DEFAULT_ENDLESS_VOID_VERSION.into(),
-        }
-    }
+/// The old, legacy, deprecated, etc. Voyager config.
+///
+/// The reason why this exists is because I originally thought that the config
+/// would be simple enough as to not need to use the newtype pattern. Maybe so,
+/// but I've later decided that I do actually want to use it. Since RON doesn't
+/// allow you to #[serde(flatten)] newtype structs, this has to exist to convert
+/// from the old config to the new one using the newtype pattern.
+#[derive(Deserialize)]
+struct LegacyVoyagerConfig {
+    /// The list of allowed songs.
+    ///
+    /// See [`DEFAULT_ALLOWED_SONGS`] for the list of defaults.
+    allowed_songs: Vec<String>,
+    /// The list of allowed characters for tiles and objects.
+    ///
+    /// This is deprecated. Since Voyager 0.9.0, a new, more sophisticated parser
+    /// is used to validate a level's tiles and objects. Therefore, this is no
+    /// longer needed. See [`parser`] for the new parser.
+    #[allow(dead_code)] // deprecated field
+    allowed_characters: String,
+    /// The latest level format version.
+    ///
+    /// See [`DEFAULT_FORMAT_VERSION`] for the default.
+    format_version: u8,
+    /// The latest version of
+    /// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void).
+    ///
+    /// See [`DEFAULT_ENDLESS_VOID_VERSION`] for the default.
+    endless_void_version: String,
 }
 
 impl AppState {
     /// Attempts to load a Voyager database from
     /// `voyager/levels.db`. If it fails (likely due
     /// to it not yet existing), it instead creates
-    /// a new one using `Self::new()`.
+    /// a default one.
     ///
-    /// # Panics
-    /// Panics if a Voyager database is found, but
-    /// deserializing it fails. Most likely, some
-    /// data structure had a breaking change (or
-    /// the file is corrupted).
+    /// # Errors
+    /// Returns an error if a Voyager database is
+    /// found, but deserializing it fails. Most
+    /// likely, some data structure had a breaking
+    /// change (or the file is corrupted).
     pub fn try_load() -> Result<SharedAppState> {
         debug!("App state is loading...");
         let data = VoyagerData::try_load()?;
@@ -376,6 +277,8 @@ impl AppState {
         self.data.banned_ips.contains(input)
     }
 
+    /// Adopts an orphan with the input key.
+    ///
     /// Moves a level and its key from the orphans list
     /// to the levels list, if found.
     pub fn adopt_orphan(&self, input: &Key) -> Result<()> {
@@ -384,8 +287,52 @@ impl AppState {
             .orphans
             .remove(input)
             .ok_or(Error::LevelNotFound)?;
+        self.send_discord_message(level.clone());
         self.insert(level);
         Ok(())
+    }
+
+    /// Sends a Discord message about the input level.
+    ///
+    /// If set in the config, attempt to send a Discord message using
+    /// every configured webhook URL with information about the level.
+    ///
+    /// This is used to optionally notify one or more Discord channels
+    /// when a level is uploaded to Voyager.
+    fn send_discord_message(&self, level: Level<Validated>) {
+        let webhook_urls = self.config.read().discord_webhook_urls.0.clone();
+        if webhook_urls.is_empty() {
+            return;
+        }
+        let Ok(parsed) = level.into_parsed(&self.config.read()) else {
+            warn!("could not parse level for some reason?");
+            return;
+        };
+        let level = IndexLevel::new(parsed);
+        if level.name.0.starts_with("test_") {
+            return;
+        }
+        let embed = ureq::json!({
+            "embeds": [{
+                "title": level.name,
+                "description": level.description,
+                "author": {
+                    "name": level.author
+                }
+            }]
+        })
+        .to_string();
+        for url in webhook_urls {
+            let embed = embed.clone();
+            tokio::task::spawn_blocking(move || {
+                let message = ureq::post(&url)
+                    .set("Content-Type", "application/json")
+                    .send_string(&embed);
+                if let Err(why) = message {
+                    warn!("could not send discord webhook message on level upload! {why}");
+                }
+            });
+        }
     }
 
     /// Get a clone of a level from the database, if it exists.
@@ -431,8 +378,9 @@ impl AppState {
         self.data.levels.len()
     }
 
-    /// Returns a comma-separated list of all stored levels
-    /// in Endless Void's level format.
+    /// Returns a comma-separated list of all stored levels in
+    /// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)'s
+    /// level format.
     ///
     /// See [`Data`] for details on level format.
     #[must_use]
@@ -445,6 +393,53 @@ impl AppState {
             .map(|level| level.data.to_string())
             .collect::<Vec<String>>()
             .join(",")
+    }
+
+    /// Checks a name and author against the database for collisions.
+    ///
+    /// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)
+    /// levels must be uniquely identifiable, which may be done through checking
+    /// a level's name and author. Two levels can not have the same name and author.
+    ///
+    /// # Errors
+    /// Returns an error if the database already contains a level with the same name
+    /// and author as the input.
+    // due to the #[cfg(debug_assertions)], the Err variant is
+    // unreachable in dev/clippy, which creates a warning. ignore it
+    #[allow(unreachable_code)]
+    pub fn check_for_name_and_author_collisions(
+        &self,
+        name: impl AsRef<str>,
+        author: impl AsRef<str>,
+    ) -> Result<()> {
+        let names_and_authors = self
+            .data
+            .levels
+            .clone()
+            .into_iter()
+            .map(|(_key, level)| level)
+            .filter_map(|level| {
+                let string = level.data.to_string();
+                let (_version, name, _description, _music, author, _other) =
+                    string.splitn(6, '|').collect_tuple()?;
+                let name = String::from_utf8(BASE64_STANDARD.decode(name).ok()?).ok()?;
+                let author = String::from_utf8(BASE64_STANDARD.decode(author).ok()?).ok()?;
+                Some((Name(name), Author(author)))
+            })
+            .collect_vec();
+        if names_and_authors
+            .into_iter()
+            .any(|(n, a)| n.0 == name.as_ref() && a.0 == author.as_ref())
+        {
+            info!("POST failed! level/name collision");
+            #[cfg(debug_assertions)]
+            {
+                info!("Running in dev mode; name/author collision will be ignored.");
+                return Ok(());
+            }
+            return Err(Error::LevelNameCollision);
+        }
+        Ok(())
     }
 
     // TODO: this function is a whole mess!
@@ -460,6 +455,198 @@ impl AppState {
             .filter_map(|level| level.into_parsed(&self.config.read()).ok())
             .map(IndexLevel::new)
             .collect()
+    }
+}
+
+impl VoyagerData {
+    /// Attempts to load a Voyager database from `voyager/levels.db`.
+    ///
+    /// If reading the file fails (likely due to it not yet existing),
+    /// it instead creates a new one using `Self::default()`, which
+    /// creates an empty database.
+    ///
+    /// # Errors
+    /// - [`Error::Bincode`] if deserializing the file fails.
+    fn try_load() -> Result<Self> {
+        debug!("Database is opening...");
+        read("voyager/levels.db").map_or_else(
+            |_| {
+                info!("Existing database not found! One will be created.");
+                Ok(Self::default())
+            },
+            |bytes| {
+                debug!("Database opened. Database is loading...");
+                match bincode::deserialize(&bytes) {
+                    Err(why) => {
+                        error!("Database could not be loaded! {why}");
+                        Err(why.into())
+                    }
+                    Ok(data) => {
+                        info!("Database loaded: {data}.");
+                        Ok(data)
+                    }
+                }
+            },
+        )
+    }
+
+    /// Attempts to save itself to `voyager/levels.db`.
+    ///
+    /// If an error occurs, it will log a warning and keep running.
+    // it is really not that complex
+    #[allow(clippy::cognitive_complexity)]
+    pub fn save(&self) {
+        debug!("Database is serializing...");
+        match bincode::serialize(&self) {
+            Err(why) => warn!("Database could not be serialized! {why}"),
+            Ok(bytes) => {
+                let len = bytes.len();
+                debug!("Database serialized. Database is saving...");
+                match write("voyager/levels.db", bytes) {
+                    Ok(()) => debug!("Database saved. {len} bytes."),
+                    Err(why) => warn!("Database could not be saved! {why}"),
+                };
+            }
+        };
+    }
+}
+
+impl VoyagerConfig {
+    /// Attempts to save itself to `voyager/config.ron`.
+    ///
+    /// If an error occurs, it will log a warning and keep running.
+    // it is really not that complex
+    #[allow(clippy::cognitive_complexity)]
+    pub fn save(&self) {
+        debug!("Config is serializing...");
+        match ron::ser::to_string_pretty(&self, PrettyConfig::default()) {
+            Err(why) => warn!("Config could not be serialized! {why}"),
+            Ok(string) => {
+                debug!("Config serialized. Config is saving...");
+                let len = string.len();
+                match write("voyager/config.ron", string) {
+                    Ok(()) => debug!("Config saved. {len} bytes."),
+                    Err(why) => warn!("Config could not be saved! {why}"),
+                };
+            }
+        };
+    }
+
+    /// Attempts to load a Voyager config from `voyager/config.ron`.
+    ///
+    /// If it fails (likely due to it not yet existing), it
+    /// instead creates a new one using `Self::default()`,
+    /// which will use a set of at-the-time correct defaults.
+    ///
+    /// # Errors
+    /// Returns an error if a Voyager config is found, but
+    /// deserializing it fails. Most likely, some data structure
+    /// had a breaking change (or the file is corrupted).
+    pub fn try_load() -> Result<Self> {
+        debug!("Config is opening...");
+        read_to_string("voyager/config.ron").map_or_else(
+            |_| {
+                info!("Existing config not found! One will be created.");
+                let config = Self::default();
+                config.save();
+                Ok(config)
+            },
+            |string| {
+                debug!("Config opened. Config is loading...");
+                ron::from_str::<Self>(&string).map_or_else(
+                    // TODO: remove
+                    #[allow(clippy::cognitive_complexity)]
+                    |_| {
+                        debug!("Config could not be loaded. Trying legacy...");
+                        match ron::from_str::<LegacyVoyagerConfig>(&string) {
+                            Err(why) => {
+                                error!("Config could not be loaded! {why}");
+                                Err(why.into())
+                            }
+                            Ok(legacy) => {
+                                info!("Legacy config loaded. Converting...");
+                                let config = Self::from(legacy);
+                                info!("Config converted. {config}");
+                                config.save();
+                                Ok(config)
+                            }
+                        }
+                    },
+                    |config| {
+                        info!("Config loaded: {config}.");
+                        config.save();
+                        Ok(config)
+                    },
+                )
+            },
+        )
+    }
+
+    /// Attempts to load a Voyager config from `voyager/config.ron`.
+    ///
+    /// This function is used for hot reloading the config
+    /// while Voyager is running.
+    ///
+    /// If it fails (likely due to the configuration being
+    /// changed to something invalid), it logs it and keeps
+    /// running without switching to the new config.
+    pub fn try_reload() -> Option<Self> {
+        debug!("Config is opening for hot reload...");
+        read_to_string("voyager/config.ron").map_or_else(
+            |why| {
+                warn!("Config could not be opened for hot reload! {why}");
+                None
+            },
+            |string| {
+                debug!("Config opened. Config is loading...");
+                match ron::from_str(&string) {
+                    Err(why) => {
+                        warn!("Config could not be loaded! {why}");
+                        None
+                    }
+                    Ok(config) => {
+                        info!("Config reloaded: {config}");
+                        Some(config)
+                    }
+                }
+            },
+        )
+    }
+}
+
+impl From<LegacyVoyagerConfig> for VoyagerConfig {
+    fn from(input: LegacyVoyagerConfig) -> Self {
+        Self {
+            allowed_songs: AllowedSongs(input.allowed_songs),
+            latest_format_version: LatestFormatVersion(input.format_version),
+            latest_endless_void_version: LatestEndlessVoidVersion(input.endless_void_version),
+            ..Default::default()
+        }
+    }
+}
+
+impl AllowedSongs {
+    /// Returns `true` if the song is in the list of allowed songs.
+    pub fn contains(&self, input: impl AsRef<str>) -> bool {
+        self.0.iter().any(|s| s == input.as_ref())
+    }
+}
+
+impl Default for AllowedSongs {
+    fn default() -> Self {
+        Self(DEFAULT_ALLOWED_SONGS.map(ToString::to_string).to_vec())
+    }
+}
+
+impl Default for LatestFormatVersion {
+    fn default() -> Self {
+        Self(DEFAULT_FORMAT_VERSION)
+    }
+}
+
+impl Default for LatestEndlessVoidVersion {
+    fn default() -> Self {
+        Self(DEFAULT_ENDLESS_VOID_VERSION.into())
     }
 }
 
@@ -550,190 +737,5 @@ async fn shutdown_signal() {
     tokio::select! {
         () = ctrl_c => {},
         () = terminate => {},
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-/// A Web UI user. Used for administrative tasks.
-pub struct User {
-    /// User's id. Always 1.
-    ///
-    /// This is because the current implementation
-    /// only allows for one user (an admin).
-    id: i64,
-    /// User's username.
-    pub username: String,
-    /// User's password hash.
-    password_hash: String,
-}
-
-impl AuthUser for User {
-    type Id = i64;
-
-    fn id(&self) -> Self::Id {
-        self.id
-    }
-
-    fn session_auth_hash(&self) -> &[u8] {
-        self.password_hash.as_bytes()
-    }
-}
-
-#[derive(Clone, Default, Serialize, Deserialize)]
-/// Web UI backend.
-pub struct Backend {
-    /// All Web UI users.
-    ///
-    /// Currently, there can only be one (an admin).
-    users: std::collections::HashMap<i64, User>,
-}
-
-impl Backend {
-    /// Attempts to load a Web UI user from
-    /// `voyager/webui.db`. If it fails (likely due
-    /// to it not yet existing), it instead creates
-    /// a new one using `Self::new()`, which will
-    /// ask for a username and password.
-    ///
-    /// # Panics
-    /// Panics if a Voyager database is found, but
-    /// deserializing it fails. Most likely, some
-    /// data structure had a breaking change (or
-    /// the file is corrupted).
-    // it is really not that complex
-    #[allow(clippy::cognitive_complexity)]
-    pub fn try_load() -> Result<Self> {
-        debug!("Web UI user is opening...");
-        let input = read("voyager/webui.db");
-        input.map_or_else(
-            |_| {
-                info!("Existing Web UI user not found! Please create one...");
-                Self::new()
-            },
-            |bytes| {
-                debug!("Web UI user opened. Web UI user loading...");
-                let backend = Self::from(&bytes);
-                match backend {
-                    Err(why) => {
-                        error!("Web UI user could not be loaded! {why}");
-                        Err(why)
-                    }
-                    Ok(backend) => {
-                        // why does Values have a last() method but not a first() method?
-                        let user = backend.users.values().last().cloned();
-                        user.map_or_else(
-                            || {
-                                error!("Web UI user could not be found!");
-                                Err(Error::WebUI)
-                            },
-                            |user| {
-                                info!("Web UI user loaded: {}.", user.username);
-                                Ok(backend)
-                            },
-                        )
-                    }
-                }
-            },
-        )
-    }
-
-    /// Attempts to save itself to `voyager/webui.db`.
-    ///
-    /// If it fails (likely due to file permissions),
-    /// it will log a warning and keep running.
-    // it is really not that complex
-    #[allow(clippy::cognitive_complexity)]
-    fn save(&self) {
-        debug!("Web UI user is serializing...");
-        match bincode::serialize(&self) {
-            Ok(bytes) => {
-                debug!("Web UI user serialized. Web UI is saving...");
-                if let Err(why) = write("voyager/webui.db", bytes) {
-                    warn!("Web UI user could not be saved: {why}");
-                } else {
-                    debug!("Web UI user saved.");
-                };
-            }
-            Err(why) => warn!("Web UI could not be serialized: {why}"),
-        }
-    }
-
-    /// Attempts to deserialize a Web UI user from bytes.
-    ///
-    /// # Errors
-    /// This function will return an error if deserializing
-    /// it fails. Most likely, some data structure had a
-    /// breaking change (or the file is corrupted).
-    fn from(webui: &[u8]) -> Result<Self> {
-        Ok(bincode::deserialize(webui)?)
-    }
-
-    /// Asks for a username and password on the CLI.
-    ///
-    /// The name must be at least 2 characters long.
-    /// The password must be at least 8 characters long.
-    fn new() -> Result<Self> {
-        let username = Text::new("username:")
-            .with_validator(min_length!(2))
-            .prompt()?;
-        let password = Password::new("password:")
-            .with_validator(min_length!(8))
-            .prompt()?;
-        let login = Self {
-            users: std::collections::HashMap::from([(
-                1,
-                User {
-                    id: 1,
-                    username,
-                    password_hash: generate_hash(password),
-                },
-            )]),
-        };
-        login.save();
-        Ok(login)
-    }
-}
-
-#[derive(Clone, Deserialize)]
-/// A user's credentials, used for authentication.
-pub struct Credentials {
-    /// User's username.
-    pub username: String,
-    /// User's password.
-    ///
-    /// Note: This is never stored nor logged. This
-    /// is immediately hashed and then dropped.
-    pub password: String,
-}
-
-#[async_trait]
-impl AuthnBackend for Backend {
-    type User = User;
-    type Credentials = Credentials;
-    type Error = Error;
-
-    async fn authenticate(
-        &self,
-        Credentials {
-            username, password, ..
-        }: Self::Credentials,
-    ) -> Result<Option<Self::User>> {
-        let user = self
-            .users
-            .values()
-            .find(|user| user.username == username)
-            .cloned();
-
-        tokio::task::spawn_blocking(|| {
-            Ok(user.filter(|user| verify_password(password, &user.password_hash).is_ok()))
-        })
-        .await?
-    }
-
-    async fn get_user(
-        &self,
-        user_id: &UserId<Self>,
-    ) -> std::result::Result<Option<Self::User>, Self::Error> {
-        Ok(self.users.get(user_id).cloned())
     }
 }

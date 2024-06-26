@@ -61,7 +61,7 @@ pub async fn delete(State(db): State<SharedAppState>, key: Path<String>) -> impl
     }
 }
 
-/// Returns all levels in a <tbody>.
+/// Returns all levels in a `<tbody>`.
 ///
 /// See the `levels.html` template for details.
 fn return_levels(auth_session: AuthSession, db: &SharedAppState) -> impl IntoResponse {

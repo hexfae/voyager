@@ -5,9 +5,15 @@
 
 // for documentation
 #[allow(unused_imports)]
-use crate::utils::level::{
-    BRAND_36_BITS, BURDENS_4_BITS, MAX_AUTHOR_LEN, MAX_DESCRIPTION_LEN, MAX_NAME_LEN,
+use crate::{
+    check_if_voyager_is_file,
+    utils::level::{
+        DestroyValue, Direction, InputValue, Objects, Tiles, BRAND_36_BITS, BURDENS_4_BITS,
+        MAX_AUTHOR_LEN, MAX_DESCRIPTION_LEN, MAX_NAME_LEN,
+    },
 };
+#[allow(unused_imports)]
+use std::str::FromStr;
 
 /// The main error type, containing all possible fail-states of Voyager.
 #[derive(thiserror::Error, Debug)]
@@ -22,7 +28,7 @@ pub enum Error {
     /// POST and PUT: The format version was invalid.
     ///
     /// Either it was not a number, was too small (<1), or was
-    /// too big. At the time of writing (2024-05-14), the
+    /// too big. At the time of writing (2024-06-25), the
     /// highest format version is 2.
     #[error("invalid format version: {0}")]
     InvalidVersion(NumberError),
@@ -81,15 +87,22 @@ pub enum Error {
     /// The key could not be parsed into a [ULID](https://github.com/ulid/spec) key.
     #[error("key error: {0}")]
     InvalidKey(#[from] ulid::DecodeError),
+    /// POST and PUT: That level/author combination already exists.
+    ///
+    /// A level with an identical name and author has already been uploaded.
+    #[error("a level by that name and by that author has already been uploaded")]
+    LevelNameCollision,
     /// GET, POST, PUT, DELETE: The key was valid, but a matching
     /// level was not found.
     ///
-    /// For GET, this is the level check that Endless Void does on startup
-    /// (checking that all stored keys are in the Voyager database). For
-    /// POST, this is the anti-orphan check that Endless Void does soon
-    /// after sending a level upload request, to make sure that the client
-    /// received the key (to prevent orphan levels in the database). For PUT
-    /// and DELETE, this is simply if the database has no matching level.
+    /// For GET, this is the level check that
+    /// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)
+    /// does on startup (checking that all stored keys are in the Voyager
+    /// database). For POST, this is the anti-orphan check that
+    /// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)
+    /// does soon after sending a level upload request, to make sure that the
+    /// client received the key (to prevent orphan levels in the database). For
+    /// PUT and DELETE, this is simply if the database has no matching level.
     #[error("level not found")]
     LevelNotFound,
     /// The user has been banned.
@@ -135,12 +148,29 @@ pub enum Error {
     /// report it!), or the file is corrupted.
     #[error("ron deserialization error: {0}")]
     Ron(#[from] ron::de::SpannedError),
-    /// The `voyager` directory could not be created.
+    /// On startup, either the `voyager` executable could not be
+    /// renamed, or the `voyager` directory could not be created.
     ///
-    /// The executable must be renamed from `voyager`
-    /// (e.g. to `voyagerexe`, `voyager-amd64, ...`).
-    #[error("voyager directory could not be created/opened; rename the executable if it's called voyager")]
+    /// See [`check_if_voyager_is_file`] for details.
+    #[error("could not rename the voyager executable")]
     Directory,
+    /// Strum enum parsing error.
+    ///
+    /// Returned by [`InputValue`] and [`Direction`].
+    #[error("could not parse input: {0}")]
+    Strum(#[from] strum::ParseError),
+    /// Integer parsing error.
+    ///
+    /// Returned by [`DestroyValue`].
+    #[error("could not parse integer: {0}")]
+    ParseInt(#[from] std::num::ParseIntError),
+    /// Used for "impossible" errors.
+    ///
+    /// This is used in the [`FromStr`] implementations for
+    /// [`Tiles`] and [`Objects`], since implementing [`FromStr`]
+    /// is apparently preferred to [`From<&str>`]
+    #[error(transparent)]
+    Infallible(#[from] std::convert::Infallible),
 }
 
 /// All number-related Voyager errors.

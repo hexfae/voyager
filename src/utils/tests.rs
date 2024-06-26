@@ -1,35 +1,59 @@
-use std::str::FromStr;
+use crate::prelude::*;
 
-use crate::{parser::Level, routers, server::AppState};
+use crate::utils::{
+    level::Level,
+    routers,
+    server::{AppState, VoyagerConfig, VoyagerData},
+};
 use axum::{
     routing::{any, delete, get, post, put},
     Router,
 };
 use axum_test::TestServer;
-use ulid::Ulid;
+use dashmap::DashMap;
+use parking_lot::RwLock;
+use std::net::{IpAddr, Ipv4Addr};
+use std::sync::Arc;
 
-fn new_app() -> Router {
-    let levels = AppState::new();
-    // levels.insert(
-    //     Ulid::from_str("01HQNDEW9C7TV1RCMQZAJV318V").expect("valid key"),
-    //     Level::from("1|V2FsbGtpY2s=|VGhlIGZpcnN0IGxldmVsIHRvIGJlIHVwbG9hZGVkIHRvIHRoZSBzZXJ2ZXJzIQ==|bXNjX2JlZWNpcmNsZQ==|QW5vbnltb3Vz|2685020332|2|flexwa16wa04X1wa17ptX3flptX1st00flX2ptX5flX2ptflX7ptflX3ptX1wa10wa14ptflX3ptflX4ptwa03wa17flX4ptflX3ptX1wa06flX5ptX1flX2ptflwa06flX4ptX3flptX1wa13wa09wa10X11wa11|emX9cgemX15tnemgocc1emplemX20cl0emX15cf1emX10lvemcf1moemX6csemX30|20240227|20240227"),
-    // );
-    // levels.insert(
-    //     Ulid::from_str("01HQNE7J0ZKY8KT1WK0EMCKBB7").expect("valid key"),
-    //     Level::from("1|V2FsbGtpY2s=|VGhlIGZpcnN0IGxldmVsIHRvIGJlIHVwbG9hZGVkIHRvIHRoZSBzZXJ2ZXJzIQ==|bXNjX2JlZWNpcmNsZQ==|QW5vbnltb3Vz|2685020332|2|flexwa16wa04X1wa17ptX3flptX1st00flX2ptX5flX2ptflX7ptflX3ptX1wa10wa14ptflX3ptflX4ptwa03wa17flX4ptflX3ptX1wa06flX5ptX1flX2ptflwa06flX4ptX3flptX1wa13wa09wa10X11wa11|emX9cgemX15tnemgocc1emplemX20cl0emX15cf1emX10lvemcf1moemX6csemX30|20240227|20240227"),
-    // );
-    // levels.insert(
-    //     Ulid::from_str("01HQNE88QJTEHHAW9ZFREQ5W5A").expect("valid key"),
-    //     Level::from("1|V2FsbGtpY2s=|VGhlIGZpcnN0IGxldmVsIHRvIGJlIHVwbG9hZGVkIHRvIHRoZSBzZXJ2ZXJzIQ==|bXNjX2JlZWNpcmNsZQ==|QW5vbnltb3Vz|2685020332|2|flexwa16wa04X1wa17ptX3flptX1st00flX2ptX5flX2ptflX7ptflX3ptX1wa10wa14ptflX3ptflX4ptwa03wa17flX4ptflX3ptX1wa06flX5ptX1flX2ptflwa06flX4ptX3flptX1wa13wa09wa10X11wa11|emX9cgemX15tnemgocc1emplemX20cl0emX15cf1emX10lvemcf1moemX6csemX30|20240227|20240227"),
-    // );
+const VALID_LEVEL: &str = "1|V2FsbGtpY2s=|VGhlIGZpcnN0IHJlYWwgcHV6emxlIHRvIGJlIHVwbG9hZGVkIHRvIHRoZSBzZXJ2ZXJzISBUaXRsZSBpcyBhIGhpbnQuLi4=|bXNjX2JlZWNpcmNsZQ==|U2tpcmxleg==|2693408940|20240314|20240316|2|flexwa16wa04X2wa17ptX4flptX2st00flX3ptX6flX3ptflX8ptflX4ptX2wa10wa14ptflX4ptflX5ptwa03wa17flX5ptflX4ptX2wa06flX6ptX2flX3ptflwa06flX5ptX4flptX2wa13wa09wa10X12wa11|emX10cgemX16tnemgocc1emplemX21csemX16cf1emX11lvemcf1moemX7csemX31";
+
+const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 168, 0, 1));
+
+impl AppState {
+    pub fn for_tests() -> SharedAppState {
+        let data = VoyagerData::for_tests();
+        let config = RwLock::new(VoyagerConfig::default());
+        Arc::new(Self { data, config })
+    }
+}
+
+impl VoyagerData {
+    fn for_tests() -> Self {
+        let key = "01ARZ3NDEKTSV4RRFFQ69G5FAV".parse().expect("valid key");
+        let level = Level::new(VALID_LEVEL, LOCALHOST)
+            .into_parsed(&VoyagerConfig::default())
+            .expect("valid level")
+            .into_level();
+        Self {
+            levels: DashMap::from_iter([(key, level)]),
+            ..Default::default()
+        }
+    }
+}
+
+#[cfg(test)]
+pub fn new_app() -> Router {
+    let db = AppState::for_tests();
     Router::new()
         .route("/voyager", get(routers::get::get))
-        .route("/voyager/:key", get(routers::get::levels_exist))
+        .route("/voyager/:keys", get(routers::get::levels_exist))
+        .route("/voyager/version", get(routers::version::version))
         .route("/voyager", post(routers::post::post))
+        .route("/voyager/orphanage", post(routers::post::orphanage))
         .route("/voyager", put(routers::put::put))
         .route("/voyager", delete(routers::delete::delete))
         .route("/voyager", any(routers::teapot::teapot))
-        .with_state(levels)
+        .with_state(db)
 }
 
 #[cfg(test)]
@@ -38,9 +62,9 @@ fn new_test_app() -> TestServer {
 
     let app = new_app();
     let config = TestServerConfig::builder()
-        // .save_cookies()
+        .save_cookies()
         // .expect_success_by_default()
-        // .mock_transport()
+        .mock_transport()
         .build();
 
     TestServer::new_with_config(app, config).expect("could not start test server")
@@ -48,18 +72,16 @@ fn new_test_app() -> TestServer {
 
 #[cfg(test)]
 mod voyager_tests {
-    use crate::tests::new_test_app;
-    use anyhow::Result;
+    use crate::prelude::*;
+    use crate::utils::tests::new_test_app;
     use axum::http::StatusCode;
     use pretty_assertions::assert_eq;
-    use ulid::Ulid;
 
     #[tokio::test]
     async fn test_get() -> Result<()> {
-        // TODO: this
         let server = new_test_app();
-        println!("hi");
         let response = server.get("/voyager").await;
+        dbg!(&response);
         assert_eq!(response.status_code(), StatusCode::OK);
         Ok(())
     }
