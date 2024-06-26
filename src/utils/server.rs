@@ -309,6 +309,9 @@ impl AppState {
             return;
         };
         let level = IndexLevel::new(parsed);
+        if level.name.0.starts_with("test_") {
+            return;
+        }
         let embed = ureq::json!({
             "embeds": [{
                 "title": level.name,
