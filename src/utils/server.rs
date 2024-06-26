@@ -3,7 +3,7 @@
 
 use crate::prelude::*;
 use crate::utils::{
-    level::{IndexLevel, Validated},
+    level::{Author, IndexLevel, Name, Validated},
     routers, webui,
 };
 use axum::{
@@ -16,8 +16,10 @@ use axum_login::{
     tower_sessions::{MemoryStore, SessionManagerLayer},
     AuthManagerLayerBuilder,
 };
+use base64::Engine;
 use dashmap::{DashMap, DashSet};
 use derive_more::Display;
+use itertools::Itertools;
 use parking_lot::RwLock;
 use ron::ser::PrettyConfig;
 use serde::{Deserialize, Serialize};
@@ -336,6 +338,53 @@ impl AppState {
             .map(|level| level.data.to_string())
             .collect::<Vec<String>>()
             .join(",")
+    }
+
+    /// Checks a name and author against the database for collisions.
+    ///
+    /// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)
+    /// levels must be uniquely identifiable, which may be done through checking
+    /// a level's name and author. Two levels can not have the same name and author.
+    ///
+    /// # Errors
+    /// Returns an error if the database already contains a level with the same name
+    /// and author as the input.
+    // due to the #[cfg(debug_assertions)], the Err variant is
+    // unreachable in dev/clippy, which creates a warning. ignore it
+    #[allow(unreachable_code)]
+    pub fn check_for_name_and_author_collisions(
+        &self,
+        name: impl AsRef<str>,
+        author: impl AsRef<str>,
+    ) -> Result<()> {
+        let names_and_authors = self
+            .data
+            .levels
+            .clone()
+            .into_iter()
+            .map(|(_key, level)| level)
+            .filter_map(|level| {
+                let string = level.data.to_string();
+                let (_version, name, _description, _music, author, _other) =
+                    string.splitn(6, '|').collect_tuple()?;
+                let name = String::from_utf8(BASE64_STANDARD.decode(name).ok()?).ok()?;
+                let author = String::from_utf8(BASE64_STANDARD.decode(author).ok()?).ok()?;
+                Some((Name(name), Author(author)))
+            })
+            .collect_vec();
+        if names_and_authors
+            .into_iter()
+            .any(|(n, a)| n.0 == name.as_ref() && a.0 == author.as_ref())
+        {
+            info!("POST failed! level/name collision");
+            #[cfg(debug_assertions)]
+            {
+                info!("Running in dev mode; name/author collision will be ignored.");
+                return Ok(());
+            }
+            return Err(Error::LevelNameCollision);
+        }
+        Ok(())
     }
 
     // TODO: this function is a whole mess!

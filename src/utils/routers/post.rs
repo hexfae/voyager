@@ -43,6 +43,9 @@ pub async fn post(
         }
     };
     debug!("Level parsed.\n{parsed}");
+
+    db.check_for_name_and_author_collisions(&parsed.name.0, &parsed.author.0)?;
+
     parsed.set_dates_to_now();
     info!("POST success: {} by {}", parsed.name, parsed.author);
     debug!("{parsed}");

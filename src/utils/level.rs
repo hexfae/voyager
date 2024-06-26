@@ -694,8 +694,8 @@ pub struct Version(u8);
 ///
 /// Encoded as [`BASE64_STANDARD`], with a minimum
 /// length of 1 and a max length of [`MAX_NAME_LEN`].
-#[derive(Debug, Display, Clone, Serialize, Deserialize)]
-pub struct Name(String);
+#[derive(Debug, Display, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Name(pub String);
 
 /// The level's description.
 ///
@@ -715,8 +715,8 @@ pub struct Music(String);
 ///
 /// Encoded as [`BASE64_STANDARD`], with a minimum
 /// length of 1 and a max length of [`MAX_AUTHOR_LEN`].
-#[derive(Debug, Display, Clone, Serialize, Deserialize)]
-pub struct Author(String);
+#[derive(Debug, Display, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Author(pub String);
 
 /// The level's author brand.
 ///

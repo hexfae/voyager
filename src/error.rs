@@ -87,6 +87,11 @@ pub enum Error {
     /// The key could not be parsed into a [ULID](https://github.com/ulid/spec) key.
     #[error("key error: {0}")]
     InvalidKey(#[from] ulid::DecodeError),
+    /// POST and PUT: That level/author combination already exists.
+    ///
+    /// A level with an identical name and author has already been uploaded.
+    #[error("a level by that name and by that author has already been uploaded")]
+    LevelNameCollision,
     /// GET, POST, PUT, DELETE: The key was valid, but a matching
     /// level was not found.
     ///
