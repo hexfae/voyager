@@ -330,25 +330,24 @@ pub enum ObjectType {
     },
     /// A type 1 Add statue's parameters.
     ///
-    /// This takes in a [`InputValue`] and a [`DestroyValue`],
-    /// see their documentation for details.
+    /// This takes in 2 [`InputValue`]s, see its documentation for details.
     AddStatue1 {
         /// See [`InputValue`].
         first_input: InputValue,
-        /// See [`DestroyValue`].
-        destroy_value: DestroyValue,
+        /// See [`InputValue`].
+        destroy_value: InputValue,
     },
     /// A type 2 Add statue's parameters.
     ///
-    /// This takes in 2 [`InputValue`]s, a [`DestroyValue`], and a
-    /// [`BranefuckProgram `] program. See their documentation for details.
+    /// This takes in 3 [`InputValue`]s and a [`BranefuckProgram `]
+    /// program. See their documentation for details.
     AddStatue2 {
         /// See [`InputValue`].
         first_input: InputValue,
         /// See [`InputValue`].
         second_input: InputValue,
-        /// See [`DestroyValue`].
-        destroy_value: DestroyValue,
+        /// See [`InputValue`].
+        destroy_value: InputValue,
         /// See [`BranefuckProgram`].
         branefuck: BranefuckProgram,
     },
@@ -518,17 +517,6 @@ pub enum InputValue {
     #[strum(serialize = "egg_count")]
     EggCount,
 }
-
-/// An add statue's destroy value.
-///
-/// Add statues may take in a
-/// [Branefuck program](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck)
-/// and a destroy value. When the program's output matches the set
-/// destroy value, the Add statue will be destroyed.
-///
-/// See [Endless Void's page on Branefuck](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck) for further details.
-#[derive(Debug, Display, Clone, Serialize, Deserialize, FromStr)]
-pub struct DestroyValue(u32);
 
 /// A [Branefuck program](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck).
 ///
@@ -702,7 +690,7 @@ pub struct Name(pub String);
 /// Encoded as [`BASE64_STANDARD`], with no minimum,
 /// but a max length of [`MAX_NAME_LEN`].
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
-pub struct Description(String);
+pub struct Description(pub String);
 
 /// The level's choice of music.
 ///
@@ -818,11 +806,9 @@ impl ObjectType {
     /// or [`ObjectType::AddStatue2`].
     ///
     /// The input [`Vec`] must be either 2 or 4 in length.
-    /// - If 2 in length, the 1st element must be a valid [`InputValue`],
-    ///   and the 2nd element a valid [`DestroyValue`].
-    /// - If 4 in length, the first 2 elements must be valid [`InputValue`]s.
-    ///   The 3rd must be a valid [`DestroyValue`]. The 4th and final element must
-    ///   be a valid [`BranefuckProgram`].
+    /// - If 2 in length, both elements must be valid [`InputValue`]s.
+    /// - If 4 in length, the first 3 elements must be valid [`InputValue`]s
+    ///   and the 4th and final element must be a valid [`BranefuckProgram`].
     ///
     /// Examples of valid input:
     ///
@@ -839,12 +825,12 @@ impl ObjectType {
         match input.len() {
             2 => Ok(Self::AddStatue1 {
                 first_input: InputValue::from_str(&input[0])?,
-                destroy_value: DestroyValue::from_str(&input[1])?,
+                destroy_value: InputValue::from_str(&input[1])?,
             }),
             4 => Ok(Self::AddStatue2 {
                 first_input: InputValue::from_str(&input[0])?,
                 second_input: InputValue::from_str(&input[1])?,
-                destroy_value: DestroyValue::from_str(&input[2])?,
+                destroy_value: InputValue::from_str(&input[2])?,
                 branefuck: BranefuckProgram::from_str(&input[3])?,
             }),
             _ => Err(Error::InvalidObjects),

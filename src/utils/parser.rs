@@ -27,7 +27,7 @@ use tracing::{info, warn};
 
 // for documentation
 #[allow(unused_imports)]
-use crate::utils::level::{BranefuckProgram, DestroyValue, InputValue};
+use crate::utils::level::{BranefuckProgram, InputValue};
 
 /// Attempts to parse the input as a valid sequence of tiles.
 ///
@@ -193,8 +193,8 @@ fn direction(input: &str) -> IResult<&str, ObjectType> {
 
 /// Attempts to parse the input as an [`ObjectType::AddStatue1`].
 ///
-/// An [`ObjectType::AddStatue1`] is prefixed by a `1`, followed by an [`InputValue`]
-/// and a [`DestroyValue`], both Base64-encoded and `!`-terminated.
+/// An [`ObjectType::AddStatue1`] is prefixed by a `1`, followed by 2
+/// [`InputValue`]s, both Base64-encoded and `!`-terminated.
 ///
 /// Example of valid input: `1cGxheWVyX3g=!Ng==!`
 fn add_statue1(input: &str) -> IResult<&str, ObjectType> {
@@ -209,9 +209,9 @@ fn add_statue1(input: &str) -> IResult<&str, ObjectType> {
 
 /// Attempts to parse the input as an [`ObjectType::AddStatue2`].
 ///
-/// An [`ObjectType::AddStatue2`] is prefixed by a `2`, followed by two [`InputValue`]s,
-/// a [`DestroyValue`], and a [`BranefuckProgram`]. The first 3 parameters are
-/// Base64-encoded, and all are `!`-terminated.
+/// An [`ObjectType::AddStatue2`] is prefixed by a `2`, followed
+/// by 3 [`InputValue`]s, and a [`BranefuckProgram`]. The first
+/// 3 parameters are Base64-encoded, and all are `!`-terminated.
 ///
 /// Example of valid input: `2bGVlY2hfY291bnQ=!Mg==!MQ==![->-<]>?.!`
 fn add_statue2(input: &str) -> IResult<&str, ObjectType> {

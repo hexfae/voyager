@@ -22,6 +22,7 @@ use derive_more::Display;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use ron::ser::PrettyConfig;
+use rustrict::{Censor, Type};
 use serde::{Deserialize, Serialize};
 use std::fs::read_to_string;
 use std::net::IpAddr;
@@ -312,12 +313,31 @@ impl AppState {
         if level.name.0.starts_with("test_") {
             return;
         }
+
+        // use a `let` binding to create a longer lived value because
+        // we get a "temporary value dropped while borrowed" otherwise
+        let mut censor = Censor::from_str(&level.name.0);
+        let censor = censor
+            .with_censor_threshold(Type::SEVERE | Type::SEVERE & Type::EVASIVE)
+            .with_censor_first_character_threshold(Type::SEVERE | Type::SEVERE & Type::EVASIVE);
+
+        let name = censor.censor();
+        censor.reset(level.description.0.chars());
+        let description = censor.censor();
+        censor.reset(level.author.0.chars());
+        let author = censor.censor();
+
+        // we need to escape the asterisks for discord, but the author
+        // field doesn't support italics/bold text, so not for author
+        let name = name.replace('*', "\\*");
+        let description = description.replace('*', "\\*");
+
         let embed = ureq::json!({
             "embeds": [{
-                "title": level.name,
-                "description": level.description,
+                "title": name,
+                "description": description,
                 "author": {
-                    "name": level.author
+                    "name": author
                 }
             }]
         })
