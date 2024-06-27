@@ -690,7 +690,7 @@ pub struct Name(pub String);
 /// Encoded as [`BASE64_STANDARD`], with no minimum,
 /// but a max length of [`MAX_NAME_LEN`].
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
-pub struct Description(String);
+pub struct Description(pub String);
 
 /// The level's choice of music.
 ///

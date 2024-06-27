@@ -22,6 +22,7 @@ notify-debouncer-mini = "0.4.1"
 parking_lot = "0.12.3"
 password-auth = "1.1.0-pre.0"
 ron = "0.8.1"
+rustrict = "0.7.25"
 serde = { version = "1.0.203", features = ["derive"] }
 strum = "0.26.3"
 strum_macros = "0.26.4"
