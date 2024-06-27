@@ -8,8 +8,8 @@
 use crate::{
     check_if_voyager_is_file,
     utils::level::{
-        DestroyValue, Direction, InputValue, Objects, Tiles, BRAND_36_BITS, BURDENS_4_BITS,
-        MAX_AUTHOR_LEN, MAX_DESCRIPTION_LEN, MAX_NAME_LEN,
+        Direction, InputValue, Objects, Tiles, BRAND_36_BITS, BURDENS_4_BITS, MAX_AUTHOR_LEN,
+        MAX_DESCRIPTION_LEN, MAX_NAME_LEN,
     },
 };
 #[allow(unused_imports)]
@@ -159,11 +159,6 @@ pub enum Error {
     /// Returned by [`InputValue`] and [`Direction`].
     #[error("could not parse input: {0}")]
     Strum(#[from] strum::ParseError),
-    /// Integer parsing error.
-    ///
-    /// Returned by [`DestroyValue`].
-    #[error("could not parse integer: {0}")]
-    ParseInt(#[from] std::num::ParseIntError),
     /// Used for "impossible" errors.
     ///
     /// This is used in the [`FromStr`] implementations for
