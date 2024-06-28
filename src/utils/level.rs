@@ -791,8 +791,9 @@ pub struct ParsedBurdens {
     /// Encoded in the third least significant bit.
     sword: bool,
     /// Encoded in the fourth least significant bit.
-    // Stack rod
-    rod: bool,
+    ///
+    /// The rod is always available, this flag gives an upgraded rod.
+    stack_rod: bool,
 }
 
 /// The level's (unparsed) tiles.
@@ -842,7 +843,7 @@ impl ParsedTiles {
     /// not included in the level format (since it's more or less the same in
     /// every level), but objects may go on these tiles. A few of these tiles are
     /// placeholders, e.g. `O` or `V`, and will be replaced with their full-sized
-    /// variant if still present before being sent out.This map is split into
+    /// variant if still present before being sent out. This map is split into
     /// chunks of 14, making for 9 rows of 14 tiles (126 tiles).
     pub fn to_emojis(&self, burdens: &ParsedBurdens) -> String {
         let mut map = String::new();
@@ -873,7 +874,7 @@ impl ParsedTiles {
         let memory = if burdens.memory { "🧊" } else { "⬜️" };
         let wings = if burdens.wings { "🪽" } else { "⬜️" };
         let sword = if burdens.sword { "🗡️" } else { "⬜️" };
-        let rod = if burdens.rod { "🪄" } else { "⬜️" };
+        let rod = if burdens.stack_rod { "🪄" } else { "🪈" };
         let hud_tiles = format!("⬜️OD⬜️🪰0{rod}⬜️{memory}{wings}{sword}⬜️V?");
         map.push_str(&hud_tiles);
         map.graphemes(true)
@@ -1416,7 +1417,7 @@ impl From<&Burdens> for ParsedBurdens {
             memory: bits[0],
             wings: bits[1],
             sword: bits[2],
-            rod: bits[3],
+            stack_rod: bits[3],
         }
     }
 }
