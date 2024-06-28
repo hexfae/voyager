@@ -108,7 +108,7 @@ pub struct VoyagerData {
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, Display)]
-#[display("{} allowed songs, format version {}, Endless Void version {}", allowed_songs.0.len(), latest_format_version, latest_endless_void_version)]
+#[display("{} allowed songs, format version {}, Endless Void version {}, {} webhook(s)", allowed_songs.0.len(), latest_format_version, latest_endless_void_version, discord_webhook_urls.0.len())]
 pub struct VoyagerConfig {
     /// See [`AllowedSongs`].
     #[serde(default)]
@@ -309,6 +309,7 @@ impl AppState {
             warn!("could not parse level for some reason?");
             return;
         };
+        let emojis = format!("```{}```", parsed.to_emojis());
         let level = IndexLevel::new(parsed);
         if level.name.0.starts_with("test_") {
             return;
@@ -327,6 +328,7 @@ impl AppState {
         censor.reset(level.author.0.chars());
         let author = censor.censor();
 
+        let author = format!("by {author}");
         // we need to escape the asterisks for discord, but the author
         // field doesn't support italics/bold text, so not for author
         let name = name.replace('*', "\\*");
@@ -335,10 +337,14 @@ impl AppState {
         let embed = ureq::json!({
             "embeds": [{
                 "title": name,
-                "description": description,
-                "author": {
-                    "name": author
-                }
+                "fields": [{
+                    "name": author,
+                    "value": description,
+                },
+                {
+                    "name": "If I had to put it in terms of emoji, it would look like this:",
+                    "value": emojis
+                }]
             }]
         })
         .to_string();

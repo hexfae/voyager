@@ -17,6 +17,7 @@ use strum_macros::EnumString;
 use time::OffsetDateTime;
 use tracing::warn;
 use ulid::Ulid;
+use unicode_segmentation::UnicodeSegmentation;
 
 /// A level's name's max length.
 pub const MAX_NAME_LEN: usize = 30;
@@ -104,12 +105,16 @@ pub struct Object {
     pub multiplier: Option<Multiplier>,
 }
 
-/// All valid tile IDs.
+/// All valid tile IDs, plus an "unknown" variant.
 ///
 /// Every ID is encoded as 2 lowercase characters, e.g. `wa` means wall.
 #[non_exhaustive]
 #[derive(Debug, Display, Clone, Serialize, Deserialize, EnumString)]
 pub enum TileId {
+    /// An unknown ID. Encoded as the input.
+    #[display("{_0}")]
+    #[strum(default)]
+    Unknown(String),
     /// Encoded as `pt`.
     #[display("pt")]
     #[strum(serialize = "pt")]
@@ -184,12 +189,16 @@ pub enum TileId {
     SmallChest,
 }
 
-/// All valid object IDs.
+/// All valid object IDs, plus an "unknown" variant.
 ///
 /// Every ID is encoded as 2 lowercase characters, e.g. `pl` means player.
 #[derive(Debug, Display, Clone, Serialize, Deserialize, EnumString)]
 #[non_exhaustive]
 pub enum ObjectId {
+    /// An unknown ID. Encoded as the input.
+    #[display("{_0}")]
+    #[strum(default)]
+    Unknown(String),
     /// Encoded as `em`.
     #[display("em")]
     #[strum(serialize = "em")]
@@ -367,36 +376,34 @@ pub enum ObjectType {
 /// tile or object is repeated in a row. For example, instead of `flflflflfl`,
 /// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)
 /// encodes 5 floor tiles in a row as `flX5`.
-#[derive(Debug, Display, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Display, Clone, Serialize, Deserialize)]
 #[display("X{_0}")] // X prefix, e.g. 9 -> X9
 pub struct Multiplier(pub u8);
 
 /// An object's direction.
 ///
-/// Encoded as a number between `0` and `3`. I currently don't
-/// know exactly which number corresponds to which direction
-/// (this isn't very important for writing a parser).
+/// Encoded as a number between `0` and `3`. The reasoning behind these is
+/// "it's the same order of directions used in math for angles 0-360."
 ///
 /// This is only used for enemies, as far as I can tell.
 #[derive(Debug, Display, Clone, Serialize, Deserialize, EnumString)]
 pub enum Direction {
-    // TODO: what are the actual directions?
-    /// Up. Unknown encoding, temporarily `0`.
+    /// Encoded as `0`.
     #[display("0")]
     #[strum(serialize = "0")]
-    Up,
-    /// Down. Unknown encoding, temporarily `1`.
+    Right,
+    /// Encoded as `1`.
     #[display("1")]
     #[strum(serialize = "1")]
-    Down,
-    /// Left. Unknown encoding, temporarily `2`.
+    Up,
+    /// Encoded as `2`.
     #[display("2")]
     #[strum(serialize = "2")]
     Left,
-    /// Right. Unknown encoding, temporarily `3`.
+    /// Encoded as `3`.
     #[display("3")]
     #[strum(serialize = "3")]
-    Right,
+    Down,
 }
 
 /// All valid input values for Add statues.
@@ -662,10 +669,19 @@ pub struct Parsed {
     pub edited: Edited,
     /// See [`Burdens`].
     pub burdens: Burdens,
+    /// See [`ParsedBurdens`].
+    #[allow(clippy::struct_field_names)] // ugly otherwise
+    pub parsed_burdens: ParsedBurdens,
     /// See [`Tiles`].
     pub tiles: Tiles,
+    /// See [`ParsedTiles`].
+    #[allow(clippy::struct_field_names)] // ugly otherwise
+    pub parsed_tiles: ParsedTiles,
     /// See [`Objects`].
     pub objects: Objects,
+    /// See [`ParsedObjects`].
+    #[allow(clippy::struct_field_names)] // ugly otherwise
+    pub parsed_objects: ParsedObjects,
     /// See [`Key`].
     pub key: Key,
     /// The IP address of the uploader.
@@ -743,7 +759,7 @@ pub struct Uploaded(String);
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Edited(String);
 
-/// The level's burdens.
+/// The level's (unparsed) burdens.
 ///
 /// A burden is an item that gives the player special abilities
 /// in-game. There are 4 possible burdens which may all be
@@ -756,6 +772,28 @@ pub struct Edited(String);
 /// See [`BURDENS_4_BITS`] for the biggest value possible.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Burdens(u8);
+
+/// The level's parsed burdens.
+///
+/// Burdens are encoded in least significant bit order. The least
+/// significant bit is for memory, second least for wings, third
+/// for sword, and finally fourth for the stack rod.
+///
+/// See [`Burdens`] for details.
+// we are not making a state machine, nor would this
+// be better represented using two-variant enums
+#[allow(clippy::struct_excessive_bools)]
+pub struct ParsedBurdens {
+    /// Encoded in the least significant bit.
+    memory: bool,
+    /// Encoded in the second least significant bit.
+    wings: bool,
+    /// Encoded in the third least significant bit.
+    sword: bool,
+    /// Encoded in the fourth least significant bit.
+    // Stack rod
+    rod: bool,
+}
 
 /// The level's (unparsed) tiles.
 ///
@@ -792,6 +830,122 @@ pub struct ParsedObjects(pub Vec<Object>);
 /// Encoded as a [ULID](https://github.com/ulid/spec) key.
 #[derive(Debug, Display, Clone, Copy, Serialize, Deserialize, Hash, Eq, PartialEq)]
 pub struct Key(Ulid);
+
+impl ParsedTiles {
+    /// Convert the parsed tiles to a representation in emojis.
+    ///
+    /// This is used for the "send a message through a discord webhook
+    /// on level upload" feature. It goes through every tile, first converting
+    /// them to its respective emoji. Then it repeats that emoji according to
+    /// its multiplier. Finally, it adds it to the map [`String`]. After it has
+    /// gone through every tile, it adds the final row of hud tiles. This row is
+    /// not included in the level format (since it's more or less the same in
+    /// every level), but objects may go on these tiles. A few of these tiles are
+    /// placeholders, e.g. `O` or `V`, and will be replaced with their full-sized
+    /// variant if still present before being sent out.This map is split into
+    /// chunks of 14, making for 9 rows of 14 tiles (126 tiles).
+    pub fn to_emojis(&self, burdens: &ParsedBurdens) -> String {
+        let mut map = String::new();
+        for tile in &self.0 {
+            let emoji = match tile.id {
+                TileId::Unknown(_) => "❓️",
+                TileId::Pit | TileId::Edge | TileId::DISEdge => "⬛️",
+                TileId::Floor | TileId::BlankFloor => "⬜️",
+                TileId::Glass => "🪟",
+                TileId::Bomb | TileId::LitBomb => "💣️",
+                TileId::FloorSwitch => "⏹️",
+                TileId::CopyFloor => "🔯",
+                TileId::Exit => "🚪",
+                TileId::DeathFloor => "🟥",
+                TileId::BlackFloor => "🔲",
+                TileId::Wall | TileId::FunhouseWall | TileId::DISWall | TileId::EXWall => "🧱",
+                TileId::SmallChest => "📦",
+            }
+            .to_string();
+            let mut string = String::new();
+            let multiplier = tile.multiplier.clone().unwrap_or_default().0;
+            string.push_str(&emoji.clone());
+            for _ in 1..multiplier {
+                string.push_str(&emoji.clone());
+            }
+            map.push_str(&string);
+        }
+        let memory = if burdens.memory { "🧊" } else { "⬜️" };
+        let wings = if burdens.wings { "🪽" } else { "⬜️" };
+        let sword = if burdens.sword { "🗡️" } else { "⬜️" };
+        let rod = if burdens.rod { "🪄" } else { "⬜️" };
+        let hud_tiles = format!("⬜️OD⬜️🪰0️⃣{rod}⬜️{memory}{wings}{sword}⬜️V?");
+        map.push_str(&hud_tiles);
+        map.graphemes(true)
+            .chunks(VOID_STRANGER_LEVEL_WIDTH)
+            .into_iter()
+            .map(Iterator::collect::<String>)
+            .collect_vec()
+            .join("\n")
+    }
+}
+
+/// A Void Stranger level's width. Used when converting
+/// [`ParsedTiles`] or [`ParsedObjects`] into emojis. See
+/// [`ParsedTiles::to_emojis`] and [`ParsedObjects::to_emojis`].
+const VOID_STRANGER_LEVEL_WIDTH: usize = 14;
+
+impl ParsedObjects {
+    /// Convert the parsed tiles to a representation in emojis.
+    ///
+    /// This is used for the "send a message through a discord webhook
+    /// on level upload" feature. It goes through every tile, first converting
+    /// them to its respective emoji. Then it repeats that emoji according to
+    /// its multiplier. Finally, it adds it to the map [`String`]. This map is
+    /// split into chunks of 14, making for 9 rows of 14 tiles (126 tiles).
+    pub fn to_emojis(&self) -> String {
+        let mut emojis = String::new();
+        for object in &self.0 {
+            let emoji = match object.id {
+                ObjectId::Unknown(_) => "❓️",
+                ObjectId::Empty | ObjectId::SecretExit => "❌",
+                ObjectId::Player => "🧑",
+                ObjectId::Leech => "🐍",
+                ObjectId::Maggot => "🐛",
+                ObjectId::Beaver => "🦫",
+                ObjectId::Smile => "😄",
+                ObjectId::Eye => "🖐️",
+                ObjectId::Mimic => "⛄️",
+                ObjectId::Octahedron => "🔷",
+                ObjectId::FamishedMan => "🧟",
+                ObjectId::AddStatue
+                | ObjectId::CifStatue
+                | ObjectId::BeeStatue
+                | ObjectId::TanStatue
+                | ObjectId::LevStatue
+                | ObjectId::MonStatue
+                | ObjectId::EusStatue
+                | ObjectId::GorStatue => "🗿",
+                ObjectId::Jukebox => "📻️",
+                ObjectId::Egg | ObjectId::FakeEgg => "🪨",
+                ObjectId::MemoryCrystal => "✨",
+                ObjectId::Spider => "🕷️",
+                ObjectId::Scaredeer => "🦌",
+                ObjectId::OrbThing => "💡",
+            }
+            .to_string();
+            let mut string = String::new();
+            let multiplier = object.multiplier.clone().unwrap_or_default().0;
+            string.push_str(&emoji.clone());
+            for _ in 1..multiplier {
+                string.push_str(&emoji.clone());
+            }
+            emojis.push_str(&string);
+        }
+        emojis
+            .graphemes(true)
+            .chunks(VOID_STRANGER_LEVEL_WIDTH)
+            .into_iter()
+            .map(Iterator::collect::<String>)
+            .collect_vec()
+            .join("\n")
+    }
+}
 
 impl ObjectType {
     /// Turns a [`Vec`] of [`String`]s into [`ObjectType::Egg`] containing a [`Vec`] of [`Message`].
@@ -934,7 +1088,10 @@ impl<State> Level<State> {
         let uploaded = Uploaded(uploaded.to_string());
         let edited = Edited(edited.to_string());
         let burdens = burdens.parse()?;
+        let parsed_burdens = ParsedBurdens::from(&burdens);
+        let parsed_tiles = tiles.parse()?;
         let tiles = tiles.parse()?;
+        let parsed_objects = objects.parse()?;
         let objects = objects.parse()?;
         let key = self.key;
         let ip = self.uploader;
@@ -949,8 +1106,11 @@ impl<State> Level<State> {
             uploaded,
             edited,
             burdens,
+            parsed_burdens,
             tiles,
+            parsed_tiles,
             objects,
+            parsed_objects,
             key,
             uploader: ip,
         })
@@ -1031,6 +1191,45 @@ impl Parsed {
             uploader: self.uploader,
             state: PhantomData::<Validated>,
         }
+    }
+
+    /// Converts its parsed tiles and parsed objects to emojis.
+    ///
+    /// First, it calls [`ParsedTiles::to_emojis`] and [`ParsedObjects::to_emojis`].
+    /// Then, it takes an iterator over both's graphemes (like characters, but treating
+    /// characters with multiple Unicode codepoints as one, e.g. emojis) and zips them up
+    /// into an iterator of pairs. Going through every pair, if the object is "❌" (empty
+    /// or secret exit), it uses the tile emoji, else it uses the object emoji, meaning
+    /// objects go on top of tiles. It then replaces every placeholder character with its
+    /// full representation (read below).
+    ///
+    /// In the hud tiles, there are a few tiles that can't be represented as a single emoji,
+    /// those being "VO", "ID", "00", "V?", and "??". Fortunately, in discord code blocks,
+    /// emojis are twice as wide as letters, letting us instead just use the characters.
+    /// Unfortunately, having two characters in place of a single emoji messes with the
+    /// length of the map. Instead, a placeholder is used for each of these tiles, those
+    /// being 'O', 'D', '0', 'V', and '?'. Thus, an object (emoji) can replace one of these
+    /// placeholders, and whichever placeholders are remaining will be swapped out for their
+    /// full-length representations, e.g. 'O' -> "VO", before being sent.
+    pub fn to_emojis(&self) -> String {
+        let tiles = self.parsed_tiles.to_emojis(&self.parsed_burdens);
+        let tiles = tiles.graphemes(true);
+        let objects = self.parsed_objects.to_emojis();
+        let objects = objects.graphemes(true);
+        let map = tiles
+            .zip(objects)
+            .map(|(tile, object)| if object == "❌" { tile } else { object })
+            .collect::<String>();
+
+        // do this one first...
+        let map = map.replace('?', "??");
+        // ...so that it doesn't replace the ? from this one
+        // and do this one second...
+        let map = map.replace('V', "V?");
+        // ...so that it doesn't replace the V from this one
+        let map = map.replace('O', "VO");
+        let map = map.replace('D', "ID");
+        map.replace('0', "00")
     }
 }
 
@@ -1207,6 +1406,18 @@ impl FromStr for Burdens {
             }));
         }
         Ok(Self(burdens))
+    }
+}
+
+impl From<&Burdens> for ParsedBurdens {
+    fn from(input: &Burdens) -> Self {
+        let bits = input.0.view_bits::<Lsb0>();
+        Self {
+            memory: bits[0],
+            wings: bits[1],
+            sword: bits[2],
+            rod: bits[3],
+        }
     }
 }
 
