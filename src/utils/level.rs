@@ -874,7 +874,7 @@ impl ParsedTiles {
         let wings = if burdens.wings { "🪽" } else { "⬜️" };
         let sword = if burdens.sword { "🗡️" } else { "⬜️" };
         let rod = if burdens.rod { "🪄" } else { "⬜️" };
-        let hud_tiles = format!("⬜️OD⬜️🪰0️⃣{rod}⬜️{memory}{wings}{sword}⬜️V?");
+        let hud_tiles = format!("⬜️OD⬜️🪰0{rod}⬜️{memory}{wings}{sword}⬜️V?");
         map.push_str(&hud_tiles);
         map.graphemes(true)
             .chunks(VOID_STRANGER_LEVEL_WIDTH)
