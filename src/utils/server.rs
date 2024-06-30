@@ -328,13 +328,17 @@ impl AppState {
         censor.reset(level.author.0.chars());
         let author = censor.censor();
 
+        let mut image = level.brand_image.bytes;
         let name = name.replace('*', "\\*");
         let description = description.replace('*', "\\*");
         let author = format!("by {author}").replace('*', "\\*");
 
-        let embed = ureq::json!({
+        let mut embed = ureq::json!({
             "embeds": [{
                 "title": name,
+                "thumbnail": {
+                    "url": "attachment://brand.png"
+                },
                 "fields": [{
                     "name": author,
                     "value": description,
@@ -345,13 +349,35 @@ impl AppState {
                 }]
             }]
         })
-        .to_string();
+        .to_string()
+        .as_bytes()
+        .to_vec();
+        let mut form = br#"----boundary
+Content-Disposition: form-data; name="payload_json"
+
+"#
+        .to_vec();
+        form.append(&mut embed);
+        let mut image_metadata = br#"
+----boundary
+Content-Disposition: form-data; name="file1"; filename="brand.png"
+Content-Type: image/png
+
+"#
+        .to_vec();
+        form.append(&mut image_metadata);
+        form.append(&mut image);
+        let mut terminator = b"
+----boundary--"
+            .to_vec();
+        form.append(&mut terminator);
+        dbg!(String::from_utf8_lossy(&form));
         for url in webhook_urls {
-            let embed = embed.clone();
+            let form = form.clone();
             tokio::task::spawn_blocking(move || {
                 let message = ureq::post(&url)
-                    .set("Content-Type", "application/json")
-                    .send_string(&embed);
+                    .set("Content-Type", "multipart/form-data; boundary=--boundary")
+                    .send_bytes(&form);
                 if let Err(why) = message {
                     warn!("could not send discord webhook message on level upload! {why}");
                 }

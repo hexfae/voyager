@@ -8,6 +8,7 @@ use base64::{prelude::BASE64_STANDARD, Engine};
 use bitvec::order::Lsb0;
 use bitvec::view::BitView;
 use derive_more::{Display, FromStr};
+use image::imageops::{resize, FilterType};
 use image::{ImageBuffer, ImageFormat, Rgb};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -741,9 +742,18 @@ pub struct Author(pub String);
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Brand(u64);
 
-/// Base64-encoded 6x6 PNG of the level author's brand.
+/// 60x60 PNG of the level author's brand.
+///
+/// Its two fields are a Base64-encoded PNG (for the Web UI),
+/// and the raw PNG bytes (for the Discord webhook).
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
-pub struct BrandImage(String);
+#[display("{base64}")]
+pub struct BrandImage {
+    /// Base64-encoded PNG.
+    pub base64: String,
+    /// Raw PNG bytes.
+    pub bytes: Vec<u8>,
+}
 
 /// The level's original upload date.
 ///
@@ -1384,12 +1394,15 @@ impl BrandImage {
                 Rgb([0, 0, 0])
             };
         }
+        let img = resize(&img, 60, 60, FilterType::Nearest);
         let mut buf = Cursor::new(Vec::new());
         if let Err(why) = img.write_to(&mut buf, ImageFormat::Png) {
             warn!("something went wrong while writing image to buffer! {why}");
         };
-        let png = BASE64_STANDARD.encode(buf.into_inner());
-        Self(png)
+        Self {
+            bytes: buf.clone().into_inner(),
+            base64: BASE64_STANDARD.encode(buf.into_inner()),
+        }
     }
 }
 
