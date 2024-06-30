@@ -328,11 +328,9 @@ impl AppState {
         censor.reset(level.author.0.chars());
         let author = censor.censor();
 
-        let author = format!("by {author}");
-        // we need to escape the asterisks for discord, but the author
-        // field doesn't support italics/bold text, so not for author
         let name = name.replace('*', "\\*");
         let description = description.replace('*', "\\*");
+        let author = format!("by {author}").replace('*', "\\*");
 
         let embed = ureq::json!({
             "embeds": [{
