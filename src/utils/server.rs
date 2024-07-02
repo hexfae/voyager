@@ -473,7 +473,7 @@ Content-Type: image/png
             .clone()
             .into_iter()
             .map(|(_key, level)| level)
-            .filter(|level| except.is_some_and(|except| level.key == except.key))
+            .filter(|level| except.is_some_and(|except| level.key != except.key))
             .filter_map(|level| {
                 let string = level.data.to_string();
                 let (_version, name, _description, _music, author, _other) =
