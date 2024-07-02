@@ -611,11 +611,7 @@ pub struct Unvalidated;
 /// Name, description, and author are all valid strings and lengths.
 /// Music is one of the configured allowed songs. Brand and burdens are valid
 /// 36-bit and 4-bit numbers, respectively. It has an upload and last edit
-/// date in `yyyymmdd` format.
-///
-/// However, the validity of the tiles and objects is not guaranteed. There
-/// is only a simple check that every character is in the configured list
-/// of allowed characters.
+/// date in `yyyymmdd` format. Every tile/object ID, type, and multiplier is valid.
 #[derive(Debug, Clone)]
 pub struct Validated;
 
