@@ -451,6 +451,10 @@ Content-Type: image/png
     /// levels must be uniquely identifiable, which may be done through checking
     /// a level's name and author. Two levels can not have the same name and author.
     ///
+    /// If provided, this function will ignore the level in the `except` parameter.
+    /// This is used for the PUT request, so that the function doesn't return an error for the
+    /// level currently being updated.
+    ///
     /// # Errors
     /// Returns an error if the database already contains a level with the same name
     /// and author as the input.
@@ -461,6 +465,7 @@ Content-Type: image/png
         &self,
         name: impl AsRef<str>,
         author: impl AsRef<str>,
+        except: Option<&Level<Validated>>,
     ) -> Result<()> {
         let names_and_authors = self
             .data
@@ -468,6 +473,7 @@ Content-Type: image/png
             .clone()
             .into_iter()
             .map(|(_key, level)| level)
+            .filter(|level| except.is_some_and(|except| level.key == except.key))
             .filter_map(|level| {
                 let string = level.data.to_string();
                 let (_version, name, _description, _music, author, _other) =

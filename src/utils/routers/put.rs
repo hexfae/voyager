@@ -59,6 +59,13 @@ pub async fn put(
             return Err(why);
         }
     };
+
+    db.check_for_name_and_author_collisions(
+        &parsed.name.0,
+        &parsed.author.0,
+        Option::from(&old_level),
+    )?;
+
     parsed.set_dates_to_now();
     debug!("Upload is being set from old level...");
     if let Err(why) = parsed.set_uploaded_from(old_level, &db.config.read()) {
