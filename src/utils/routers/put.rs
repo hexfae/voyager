@@ -63,7 +63,7 @@ pub async fn put(
     db.check_for_name_and_author_collisions(
         &parsed.name.0,
         &parsed.author.0,
-        Option::from(&old_level),
+        Some(&old_level),
     )?;
 
     parsed.set_dates_to_now();
