@@ -2,8 +2,6 @@
 
 // for documentation
 #[allow(unused_imports)]
-use crate::check_if_voyager_is_file;
-#[allow(unused_imports)]
 use std::str::FromStr;
 #[allow(unused_imports)]
 use void_codex::{
@@ -74,12 +72,6 @@ pub enum Error {
     /// report it!), or the file is corrupted.
     #[error("ron deserialization error: {0}")]
     Ron(#[from] ron::de::SpannedError),
-    /// On startup, either the `voyager` executable could not be
-    /// renamed, or the `voyager` directory could not be created.
-    ///
-    /// See [`check_if_voyager_is_file`] for details.
-    #[error("could not rename the voyager executable")]
-    Directory,
 }
 
 use axum::http::StatusCode;
