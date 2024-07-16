@@ -1,15 +1,18 @@
 //! Routers for the GET HTTP method.
 
 use crate::prelude::*;
-//for documentation
-#[allow(unused_imports)]
-use crate::utils::level::Data;
+
 use axum::{
     extract::{ConnectInfo, Path, State},
     http::StatusCode,
 };
 use std::{net::SocketAddr, str::FromStr};
 use tracing::info;
+use void_codex::Key;
+
+//for documentation
+#[allow(unused_imports)]
+use void_codex::Data;
 
 /// Returns a comma-separated list of all levels stored in the database.
 ///
@@ -33,12 +36,12 @@ pub async fn get(
 ///
 /// On startup, [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)
 /// sends a GET request to `/voyager/:keys`, where `keys` is a comma-separated list
-/// of level keys. Voyager then returns a sequence of 0's and 1's according to the
-/// existence of the levels matching those keys.
+/// of level keys. Void Voyager then returns a sequence of 0's and 1's according to
+/// the existence of the levels matching those keys.
 ///
 /// For example, for `key1,key2,key3,key4`, if `key1`, `key2`, and `key4`
-/// are valid, but `key3` is not, Voyager will return 200 OK and `1101`.
-/// If any key fails to parse, Voyager will instead return 400 BAD REQUEST.
+/// are valid, but `key3` is not, Void Voyager will return 200 OK and `1101`.
+/// If any key fails to parse, Void Voyager will instead return 400 BAD REQUEST.
 ///
 /// Valid is defined as "a level with a key that exists in the database."
 ///
@@ -60,7 +63,7 @@ pub async fn levels_exist(
         let invalid_keys_len = input_keys_len - parsed_keys.len();
         info!("GET levels check failed by {addr}! {invalid_keys_len} keys were invalid");
         // most probable error
-        return Err(Error::InvalidKey(ulid::DecodeError::InvalidLength));
+        return Err(LevelError::InvalidKey(ulid::DecodeError::InvalidLength).into());
     }
     let found = parsed_keys
         .iter()

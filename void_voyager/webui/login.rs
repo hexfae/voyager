@@ -2,6 +2,7 @@
 
 use crate::prelude::*;
 
+use crate::webui::backend::Credentials;
 use askama_axum::Template;
 use axum::{
     http::StatusCode,

@@ -65,6 +65,7 @@ impl Backend {
     /// ask for a username and password.
     ///
     /// # Errors
+    ///
     /// Returns an error if a Web UI user is found, but
     /// deserializing it fails. Most likely, some
     /// data structure had a breaking change (or
@@ -130,6 +131,7 @@ impl Backend {
     /// Attempts to deserialize a Web UI user from bytes.
     ///
     /// # Errors
+    ///
     /// This function will return an error if deserializing
     /// it fails. Most likely, some data structure had a
     /// breaking change (or the file is corrupted).

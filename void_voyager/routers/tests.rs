@@ -1,7 +1,6 @@
 use crate::prelude::*;
 
 use crate::utils::{
-    level::Level,
     routers,
     server::{AppState, VoyagerConfig, VoyagerData},
 };
@@ -14,6 +13,7 @@ use dashmap::DashMap;
 use parking_lot::RwLock;
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
+use void_codex::Level;
 
 const VALID_LEVEL: &str = "1|V2FsbGtpY2s=|VGhlIGZpcnN0IHJlYWwgcHV6emxlIHRvIGJlIHVwbG9hZGVkIHRvIHRoZSBzZXJ2ZXJzISBUaXRsZSBpcyBhIGhpbnQuLi4=|bXNjX2JlZWNpcmNsZQ==|U2tpcmxleg==|2693408940|20240314|20240316|2|flexwa16wa04X2wa17ptX4flptX2st00flX3ptX6flX3ptflX8ptflX4ptX2wa10wa14ptflX4ptflX5ptwa03wa17flX5ptflX4ptX2wa06flX6ptX2flX3ptflwa06flX5ptX4flptX2wa13wa09wa10X12wa11|emX10cgemX16tnemgocc1emplemX21csemX16cf1emX11lvemcf1moemX7csemX31";
 
@@ -29,9 +29,12 @@ impl AppState {
 
 impl VoyagerData {
     fn for_tests() -> Self {
+        let config = VoyagerConfig::default();
+        let latest_version = config.latest_format_version.0;
+        let allowed_songs = config.allowed_songs.0;
         let key = "01ARZ3NDEKTSV4RRFFQ69G5FAV".parse().expect("valid key");
         let level = Level::new(VALID_LEVEL, LOCALHOST)
-            .into_parsed(&VoyagerConfig::default())
+            .into_parsed(latest_version, allowed_songs)
             .expect("valid level")
             .into_level();
         Self {
@@ -73,7 +76,7 @@ fn new_test_app() -> TestServer {
 #[cfg(test)]
 mod voyager_tests {
     use crate::prelude::*;
-    use crate::utils::tests::new_test_app;
+    use crate::utils::routers::tests::new_test_app;
     use axum::http::StatusCode;
     use pretty_assertions::assert_eq;
 

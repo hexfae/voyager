@@ -7,10 +7,11 @@ use axum::{
 };
 use std::net::SocketAddr;
 use tracing::{debug, info};
+use void_codex::Level;
 
 // for documentation
 #[allow(unused_imports)]
-use crate::utils::level::Data;
+use void_codex::Data;
 
 /// Updates an already uploaded level in the database.
 ///
@@ -37,17 +38,19 @@ pub async fn put(
         Ok(level) => level,
         Err(why) => {
             info!("PUT failed! {why}");
-            return Err(why);
+            return Err(why.into());
         }
     };
     let key = level.key;
     debug!("Level is parsing...");
-    let try_parse = level.into_parsed(&db.config.read());
+    let latest_version = db.config.read().latest_format_version.0;
+    let allowed_songs = &db.config.read().allowed_songs.0;
+    let try_parse = level.into_parsed(latest_version, allowed_songs);
     let mut parsed = match try_parse {
         Ok(parsed) => parsed,
         Err(why) => {
             info!("PUT failed! {why}");
-            return Err(why);
+            return Err(why.into());
         }
     };
     debug!("Level parsed.\n{parsed}.");
@@ -60,17 +63,13 @@ pub async fn put(
         }
     };
 
-    db.check_for_name_and_author_collisions(
-        &parsed.name.0,
-        &parsed.author.0,
-        Some(&old_level),
-    )?;
+    db.check_for_name_and_author_collisions(&parsed.name.0, &parsed.author.0, Some(&old_level))?;
 
     parsed.set_dates_to_now();
     debug!("Upload is being set from old level...");
-    if let Err(why) = parsed.set_uploaded_from(old_level, &db.config.read()) {
+    if let Err(why) = parsed.set_uploaded_from(old_level, latest_version, allowed_songs) {
         info!("PUT failed! {why}");
-        return Err(why);
+        return Err(why.into());
     };
     debug!("Upload set.");
     info!("PUT success: {} by {}", parsed.name, parsed.author);

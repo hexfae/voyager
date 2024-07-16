@@ -27,7 +27,7 @@ pub async fn delete(
         return Err(Error::Banned);
     }
     debug!("Key is parsing...");
-    let key = match key.parse() {
+    let key = match key.parse().map_err(|e: LevelError| e.into()) {
         Ok(key) => key,
         Err(why) => {
             info!("Key could not be parsed! {why}");

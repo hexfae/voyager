@@ -2655,7 +2655,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 
 [[package]]
-name = "voyager"
+name = "void_codex"
+version = "0.9.6"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "bitvec",
+ "derive_more",
+ "image",
+ "itertools 0.13.0",
+ "nom",
+ "serde",
+ "strum",
+ "strum_macros",
+ "thiserror",
+ "time",
+ "tracing",
+ "ulid",
+ "unicode-segmentation",
+]
+
+[[package]]
+name = "void_voyager"
 version = "0.9.6"
 dependencies = [
  "askama",
@@ -2665,13 +2686,10 @@ dependencies = [
  "axum-test",
  "base64 0.22.1",
  "bincode",
- "bitvec",
  "dashmap",
  "derive_more",
- "image",
  "inquire",
  "itertools 0.13.0",
- "nom",
  "notify-debouncer-mini",
  "parking_lot",
  "password-auth",
@@ -2679,8 +2697,6 @@ dependencies = [
  "ron",
  "rustrict",
  "serde",
- "strum",
- "strum_macros",
  "thiserror",
  "time",
  "tokio",
@@ -2689,8 +2705,8 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "ulid",
- "unicode-segmentation",
  "ureq",
+ "void_codex",
 ]
 
 [[package]]

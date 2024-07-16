@@ -1,12 +1,12 @@
-//! The front page of the Voyager Web UI.
+//! The front page of the Void Voyager Web UI.
 //!
 //! Most of these functions are called by htmx.
 
 use crate::prelude::*;
-use crate::utils::level::IndexLevel;
 use askama_axum::{IntoResponse, Template};
 use axum::extract::Path;
 use axum::{extract::State, response::Html};
+use void_codex::IndexLevel;
 
 #[derive(Template)]
 #[template(path = "index.html")]
@@ -21,7 +21,7 @@ struct Levels {
     levels: Vec<IndexLevel>,
 }
 
-/// The main page of the Voyager Web UI.
+/// The main page of the Void Voyager Web UI.
 pub async fn index(auth_session: AuthSession) -> impl IntoResponse {
     auth_session
         .user

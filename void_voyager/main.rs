@@ -1,4 +1,4 @@
-//! Voyager is the server back-end for
+//! Void Voyager is the server back-end for
 //! [Endless Void](https://github.com/Skirlez/void-stranger-endless-void),
 //! which is a level editor for
 //! [Void Stranger](https://store.steampowered.com/app/2121980/Void_Stranger/),
@@ -8,34 +8,44 @@
 //! downloading all uploaded levels. Authentication is managed through
 //! a per-level key-based system.
 
-use crate::{prelude::*, utils::server::start_voyager};
+use crate::prelude::*;
 use notify_debouncer_mini::{
     new_debouncer, notify::RecursiveMode, DebounceEventResult, DebouncedEventKind,
 };
-use std::fs::rename;
-use std::{fs::create_dir, io, path::Path, time::Duration};
+use server::{start_voyager, AppState};
+use std::{
+    fs::{create_dir, rename},
+    io,
+    path::Path,
+    time::Duration,
+};
 use tracing::{debug, error, info, level_filters::LevelFilter, warn};
 use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::reload::Handle;
-use tracing_subscriber::reload::Layer as ReloadLayer;
-use tracing_subscriber::Registry;
-use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, Layer};
-use utils::server::AppState;
+use tracing_subscriber::{
+    fmt,
+    layer::SubscriberExt,
+    reload::{Handle, Layer as ReloadLayer},
+    util::SubscriberInitExt,
+    Layer, Registry,
+};
+use webui::backend::Backend;
 
 mod error;
 mod prelude;
-mod utils;
+mod routers;
+mod server;
+mod webui;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let handle = stdout_log();
-    create_voyager_directories()?;
+    create_void_voyager_directories()?;
     // file logger only periodically saves the logs to file.
     // it will also saves the logs to a file when the guard
     // is dropped (at the end of this scope)
     let _guard = file_log(&handle);
 
-    info!("Voyager is loading...");
+    info!("Void Voyager is loading...");
     let app_state = AppState::try_load()?;
     // save immediately in case a new config option has
     // been added so that #[serde(default)] can create it
@@ -68,17 +78,18 @@ async fn main() -> Result<()> {
         .watcher()
         .watch(Path::new("voyager"), RecursiveMode::NonRecursive)?;
 
-    info!("Voyager loaded. Voyager is starting...");
+    info!("Void Voyager loaded. Void Voyager is starting...");
     start_voyager(app_state, backend).await
 }
 
-/// Creates all the directories needed for Voyager and checks if `voyager`
+/// Creates all the directories needed for Void Voyager and checks if `voyager`
 /// is a file.
 ///
 /// # Errors
+///
 /// Returns an error if any of the directories could not be created or if
 /// `voyager` could not be renamed (if present).
-fn create_voyager_directories() -> Result<()> {
+fn create_void_voyager_directories() -> Result<()> {
     check_if_voyager_is_file()?;
     try_create_directory("voyager")?;
     try_create_directory("voyager/backups")?;
@@ -89,10 +100,10 @@ fn create_voyager_directories() -> Result<()> {
 /// Checks if `voyager` is a file. If it is, it renames it to `voyagerexe`.
 ///
 /// This is a workaround. Early in the development process, the decision was
-/// made to make `voyager` the name for Voyager's directory. However, it is
+/// made to make `voyager` the name for Void Voyager's directory. However, it is
 /// not possible to have both a file named `voyager` and a directory named
-/// `voyager`, which would cause Voyager to panic on startup. This went
-/// unnoticed at first due to Voyager always being ran through `cargo run`
+/// `voyager`, which would cause Void Voyager to panic on startup. This went
+/// unnoticed at first due to Void Voyager always being ran through `cargo run`
 /// during development, which meant that the `voyager` executable would
 /// not be in the same directory as the created `voyager` directory.
 /// Additionally, the [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)
@@ -104,6 +115,7 @@ fn create_voyager_directories() -> Result<()> {
 /// the current directory.
 ///
 /// # Errors
+///
 /// It returns an error if the executable could not be renamed.
 pub fn check_if_voyager_is_file() -> Result<()> {
     if Path::new("voyager").is_file() {
@@ -120,6 +132,7 @@ pub fn check_if_voyager_is_file() -> Result<()> {
 /// Creates the specified directory if it does not exist.
 ///
 /// # Errors
+///
 /// It returns an error if the directory could not be created.
 fn try_create_directory(path: &str) -> Result<()> {
     if let Err(why) = create_dir(path) {

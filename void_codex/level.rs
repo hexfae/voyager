@@ -3,7 +3,8 @@
 
 use crate::prelude::*;
 
-use crate::utils::parser::{parse_objects, parse_tiles};
+use crate::error::Error;
+use crate::parser::{parse_objects, parse_tiles};
 use base64::{prelude::BASE64_STANDARD, Engine};
 use bitvec::order::Lsb0;
 use bitvec::view::BitView;
@@ -29,7 +30,7 @@ pub const MAX_DESCRIPTION_LEN: usize = 256;
 /// A level's author's max length.
 pub const MAX_AUTHOR_LEN: usize = 30;
 
-/// A level's author brand's highest value.
+/// A level's author's brand's highest value.
 ///
 /// Equal to 2^36-1, 68719476735, or `68_719_476_735`.
 pub const BRAND_36_BITS: u64 = 0b1111_1111_1111_1111_1111_1111_1111_1111_1111;
@@ -51,7 +52,7 @@ pub const BURDENS_4_BITS: u8 = 0b1111;
 /// be used as multipliers, e.g. `+5` instead of `+++++`).
 ///
 /// See [Endless Void's page on Branefuck](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck) for details.
-const BRANEFUCK_CHARACTERS: &str = "<>+-.[]?1234567890";
+pub const BRANEFUCK_CHARACTERS: &str = "<>+-.[]?1234567890";
 
 /// A tile, as represented by [Endless Void](https://github.com/Skirlez/void-stranger-endless-void).
 ///
@@ -685,53 +686,52 @@ pub struct Parsed {
     pub uploader: IpAddr,
 }
 
-/// The level's format version.
+/// A level's format version.
 ///
-/// At the time of writing (2024-06-25), this is 1 or 2.
+/// At the time of writing (2024-07-16), the latest format version is 2.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Version(u8);
 
-/// The level's name.
+/// A level's name.
 ///
 /// Encoded as [`BASE64_STANDARD`], with a minimum
 /// length of 1 and a max length of [`MAX_NAME_LEN`].
 #[derive(Debug, Display, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Name(pub String);
 
-/// The level's description.
+/// A level's description.
 ///
 /// Encoded as [`BASE64_STANDARD`], with no minimum,
 /// but a max length of [`MAX_NAME_LEN`].
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Description(pub String);
 
-/// The level's choice of music.
+/// A level's choice of music.
 ///
-/// Encoded as [`BASE64_STANDARD`], it must be one of the
-/// configured allowed songs from [`VoyagerConfig`].
+/// Encoded as [`BASE64_STANDARD`], it must be on the
+/// input list of allowed songs.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Music(String);
 
-/// The level's author.
+/// A level's author.
 ///
 /// Encoded as [`BASE64_STANDARD`], with a minimum
 /// length of 1 and a max length of [`MAX_AUTHOR_LEN`].
 #[derive(Debug, Display, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Author(pub String);
 
-/// The level's author brand.
+/// A level's author brand.
 ///
 /// Brand is a 6x6 grid consisting of either white or
-/// black pixels. As such, the brand is encoded as 36
-/// bits, and is therefore stored as a u64 in Voyager
-/// and sent to/from
+/// black pixels. As such, the brand is encoded as 36 bits,
+/// and is therefore stored as a u64 and sent to/from
 /// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)
 /// as a decimal integer.
 ///
 /// The pixels/bits are stored in least significant order.
 /// For example, a brand with the first 4 pixels white and
-/// the rest black would be represented in Voyager as a u64
-/// with 60 0's followed by 4 1's in binary, or 15 in decimal.
+/// the rest black would be represented as a u64 with 60
+/// 0's followed by 4 1's in binary, or 15 in decimal.
 ///
 /// See [`BRAND_36_BITS`] for the biggest brand possible (a
 /// completely white 6x6 grid).
@@ -751,27 +751,26 @@ pub struct BrandImage {
     pub bytes: Vec<u8>,
 }
 
-/// The level's original upload date.
+/// A level's original upload date.
 ///
 /// Encoded as `yyyymmdd`, e.g. 20240304. The timezone
 /// is UTC.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Uploaded(String);
 
-/// The level's last edit date.
+/// A level's last edit date.
 ///
 /// Encoded as `yyyymmdd`, e.g. 20240304. The timezone
 /// is UTC.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Edited(String);
 
-/// The level's (unparsed) burdens.
+/// A level's (unparsed) burdens.
 ///
 /// A burden is an item that gives the player special abilities
-/// in-game. There are 4 possible burdens which may all be
-/// independently toggled on or off. As such, the burdens can
-/// be encoded as 4 bits, and are therefore stored as a u8 in
-/// Voyager and sent to/from
+/// in-game. There are 4 possible burdens which may all be independently
+/// toggled on or off. As such, the burdens can be encoded as 4 bits,
+/// and are therefore stored as a [`u8`] and sent to/from
 /// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)
 /// as a decimal integer.
 ///
@@ -779,7 +778,7 @@ pub struct Edited(String);
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Burdens(u8);
 
-/// The level's parsed burdens.
+/// A level's parsed burdens.
 ///
 /// Burdens are encoded in least significant bit order. The least
 /// significant bit is for memory, second least for wings, third
@@ -802,7 +801,7 @@ pub struct ParsedBurdens {
     stack_rod: bool,
 }
 
-/// The level's (unparsed) tiles.
+/// A level's (unparsed) tiles.
 ///
 /// Encoded in [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)'s
 /// black hole format. See [`ParsedTiles::from_str`] or
@@ -811,13 +810,13 @@ pub struct ParsedBurdens {
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Tiles(String);
 
-/// The level's parsed tiles.
+/// A level's parsed tiles.
 ///
 /// See [`Tile`] for details.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParsedTiles(pub Vec<Tile>);
 
-/// The level's (unparsed) objects.
+/// A level's (unparsed) objects.
 ///
 /// Encoded in [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)'s
 /// black hole format. See [`ParsedObjects::from_str`] or
@@ -826,13 +825,13 @@ pub struct ParsedTiles(pub Vec<Tile>);
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Objects(String);
 
-/// The level's parsed objects.
+/// A level's parsed objects.
 ///
 /// See [`Object`] for details.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParsedObjects(pub Vec<Object>);
 
-/// The level's private key.
+/// A level's private key.
 ///
 /// Encoded as a [ULID](https://github.com/ulid/spec) key.
 #[derive(Debug, Display, Clone, Copy, Serialize, Deserialize, Hash, Eq, PartialEq)]
@@ -975,6 +974,10 @@ impl ObjectType {
     ///
     /// 1. (``player_x``, `7`)
     /// 2. (``leech_count``, `2`, `1`, `[->-<]>?.`)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error on invalid input data for an Add statue.
 
     // nom's count function returns a Vec, which
     // isn't needed here (a slice would be fine),
@@ -985,14 +988,17 @@ impl ObjectType {
     pub fn add_statue(input: Vec<String>) -> Result<Self> {
         match input.len() {
             2 => Ok(Self::AddStatue1 {
-                first_input: InputValue::from_str(&input[0])?,
-                destroy_value: InputValue::from_str(&input[1])?,
+                first_input: InputValue::from_str(&input[0]).map_err(|_| Error::InvalidObjects)?,
+                destroy_value: InputValue::from_str(&input[1])
+                    .map_err(|_| Error::InvalidObjects)?,
             }),
             4 => Ok(Self::AddStatue2 {
-                first_input: InputValue::from_str(&input[0])?,
-                second_input: InputValue::from_str(&input[1])?,
-                destroy_value: InputValue::from_str(&input[2])?,
-                branefuck: BranefuckProgram::from_str(&input[3])?,
+                first_input: InputValue::from_str(&input[0]).map_err(|_| Error::InvalidObjects)?,
+                second_input: InputValue::from_str(&input[1]).map_err(|_| Error::InvalidObjects)?,
+                destroy_value: InputValue::from_str(&input[2])
+                    .map_err(|_| Error::InvalidObjects)?,
+                branefuck: BranefuckProgram::from_str(&input[3])
+                    .map_err(|_| Error::InvalidObjects)?,
             }),
             _ => Err(Error::InvalidObjects),
         }
@@ -1001,9 +1007,13 @@ impl ObjectType {
     /// Attempts to parse the input as [`ObjectType::Direction`].
     ///
     /// See [`Direction`] for details.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error on invalid input.
     pub fn direction(input: &str) -> Result<Self> {
         Ok(Self::Direction {
-            direction: Direction::from_str(input)?,
+            direction: Direction::from_str(input).map_err(|_| Error::InvalidObjects)?,
         })
     }
 }
@@ -1047,7 +1057,7 @@ impl Level<Unvalidated> {
     ///
     /// # Errors
     ///
-    /// Returns an error if the input is invalid.
+    /// Returns an error on invalid input.
     pub fn new_from_put(input: &str, ip: IpAddr) -> Result<Self> {
         let (input, key) = input.rsplit_once('|').ok_or(Error::InvalidStructure)?;
         Ok(Self {
@@ -1066,7 +1076,11 @@ impl<State> Level<State> {
     ///
     /// Returns an error if the input had an invalid structure, contained invalid
     /// Base64, produced invalid UTF-8, or does not use one of the allowed songs.
-    pub fn into_parsed(self, config: &VoyagerConfig) -> Result<Parsed> {
+    pub fn into_parsed(
+        self,
+        latest_version: impl Into<u8>,
+        allowed_songs: impl AsRef<[String]>,
+    ) -> Result<Parsed> {
         let (
             version,
             name,
@@ -1086,10 +1100,10 @@ impl<State> Level<State> {
             .collect_tuple()
             .ok_or(Error::InvalidStructure)?;
 
-        let version = Version::from_str(version, config)?;
+        let version = Version::from_str(version, latest_version)?;
         let name = name.parse()?;
         let description = description.parse()?;
-        let music = Music::from_str(music, config)?;
+        let music = Music::from_str(music, allowed_songs)?;
         let author = author.parse()?;
         let brand = brand.parse()?;
         let uploaded = Uploaded(uploaded.to_string());
@@ -1126,6 +1140,7 @@ impl<State> Level<State> {
 
 impl IndexLevel {
     /// Creates a new [`IndexLevel`] from a parsed level.
+    #[must_use]
     pub fn new(input: Parsed) -> Self {
         let brand_image = BrandImage::new(&input.brand);
         Self {
@@ -1165,12 +1180,17 @@ impl Parsed {
     /// This is used for PUT requests, where the
     /// old level is gotten from the database to
     /// reference the level's original upload date.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error on invalid input level.
     pub fn set_uploaded_from(
         &mut self,
         input: Level<Validated>,
-        config: &VoyagerConfig,
+        latest_version: impl Into<u8>,
+        allowed_songs: impl AsRef<[String]>,
     ) -> Result<()> {
-        self.uploaded = input.into_parsed(config)?.uploaded;
+        self.uploaded = input.into_parsed(latest_version, allowed_songs)?.uploaded;
         Ok(())
     }
 
@@ -1179,6 +1199,7 @@ impl Parsed {
     /// For a POST and PUT requests, this is done immediately
     /// after parsing (validating) the level to insert into
     /// the database as validated.
+    #[must_use]
     pub fn into_level(self) -> Level<Validated> {
         let version = self.version.0;
         let name = BASE64_STANDARD.encode(self.name.0);
@@ -1218,6 +1239,7 @@ impl Parsed {
     /// being 'O', 'D', '0', 'V', and '?'. Thus, an object (emoji) can replace one of these
     /// placeholders, and whichever placeholders are remaining will be swapped out for their
     /// full-length representations, e.g. 'O' -> "VO", before being sent.
+    #[must_use]
     pub fn to_emojis(&self) -> String {
         let tiles = self.parsed_tiles.to_emojis(&self.parsed_burdens);
         let tiles = tiles.graphemes(true);
@@ -1244,18 +1266,20 @@ impl Version {
     /// Parses input as an integer for a level's format version
     ///
     /// # Errors
+    ///
     /// Returns an error if the input wasn't a number, was too
     /// big, or was too small.
-    fn from_str(input: &str, config: &VoyagerConfig) -> Result<Self> {
+    fn from_str(input: &str, latest_version: impl Into<u8>) -> Result<Self> {
+        let latest_version = latest_version.into();
         let version = input
             .parse::<u8>()
             .map_err(|why| Error::InvalidVersion(NumberError::NotANumber(why)))?;
-        let too_big = version > config.latest_format_version.0;
+        let too_big = version > latest_version;
         let is_zero = version == 0;
 
         if too_big {
             return Err(Error::InvalidVersion(NumberError::TooBig {
-                max: u64::from(config.latest_format_version.0),
+                max: u64::from(latest_version),
                 found: u64::from(version),
             }));
         }
@@ -1316,17 +1340,18 @@ impl Music {
     /// Parses input as music from Void Stranger.
     ///
     /// # Errors
+    ///
     /// Returns an error if the input was invalid Base64,
     /// produced invalid UTF-8, or is not one of the allowed songs.
-    fn from_str(input: &str, config: &VoyagerConfig) -> Result<Self> {
+    fn from_str(input: &str, allowed_songs: impl AsRef<[String]>) -> Result<Self> {
         let music = String::from_utf8(
             BASE64_STANDARD
                 .decode(input)
                 .map_err(|why| Error::InvalidMusic(StringError::Base64(why)))?,
         )
         .map_err(|why| Error::InvalidMusic(StringError::FromUtf8(why)))?;
-        if !config.allowed_songs.contains(&music) {
-            return Err(Error::NotASong);
+        if !allowed_songs.as_ref().contains(&music) {
+            return Err(Error::UnknownMusic);
         }
         Ok(Self(music))
     }
@@ -1456,6 +1481,7 @@ impl FromStr for ParsedTiles {
     /// Attempts to parse the input as a valid sequence of tiles.
     ///
     /// # Errors
+    ///
     /// Returns an error if any tile was invalid. This includes an invalid
     /// [`TileId`], an invalid [`TileType`], an invalid [`Multiplier`],
     /// or some other invalid input.
@@ -1488,6 +1514,7 @@ impl FromStr for ParsedObjects {
     /// Attempts to parse the input as a valid sequence of objects.
     ///
     /// # Errors
+    ///
     /// Returns an error if any object was invalid. This includes an invalid
     /// [`ObjectId`], an invalid [`ObjectType`], an invalid [`Multiplier`],
     /// or some other invalid input.
@@ -1499,8 +1526,15 @@ impl FromStr for ParsedObjects {
 impl Key {
     /// Generates a new [ULID](https://github.com/ulid/spec)
     /// key for a level.
+    #[must_use]
     pub fn new() -> Self {
         Self(Ulid::new())
+    }
+}
+
+impl Default for Key {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

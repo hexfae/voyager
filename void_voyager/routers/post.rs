@@ -7,10 +7,11 @@ use axum::{
 };
 use std::net::SocketAddr;
 use tracing::{debug, info};
+use void_codex::Level;
 
 // for documentation
 #[allow(unused_imports)]
-use crate::utils::level::Data;
+use void_codex::Data;
 
 /// Stages a level for uploading (if valid) and returns
 /// its key. An anti-orphan check [`orphanage`] is necessary.
@@ -34,12 +35,14 @@ pub async fn post(
 
     let level = Level::new(level, addr);
     debug!("Level is parsing...");
-    let try_parse = level.into_parsed(&db.config.read());
+    let latest_version = db.config.read().latest_format_version.0;
+    let allowed_songs = &db.config.read().allowed_songs.0;
+    let try_parse = level.into_parsed(latest_version, allowed_songs);
     let mut parsed = match try_parse {
         Ok(parsed) => parsed,
         Err(why) => {
             info!("POST failed! {why}");
-            return Err(why);
+            return Err(why.into());
         }
     };
     debug!("Level parsed.\n{parsed}");
@@ -61,7 +64,7 @@ pub async fn post(
 /// Moves a level from the orphan list to the level list.
 ///
 /// To make sure that the client received and saved the key,
-/// Voyager will wait to insert levels into the database until
+/// Void Voyager will wait to insert levels into the database until
 /// it receives the level's key back, finally inserting the
 /// level into the level list if successful. This is to combat
 /// the possible immediate creation of orphan levels (ones
@@ -79,7 +82,7 @@ pub async fn orphanage(
     info!("ADOPTION sent by {addr}");
 
     debug!("Key is parsing...");
-    let ssn = match key.parse() {
+    let ssn = match key.parse().map_err(|e: LevelError| e.into()) {
         Ok(ssn) => ssn,
         Err(why) => {
             info!("ADOPTION failed: {why}");

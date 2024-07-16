@@ -6,7 +6,7 @@
 
 use crate::prelude::*;
 
-use crate::utils::level::{
+use crate::level::{
     Multiplier, Object, ObjectId, ObjectType, ParsedObjects, ParsedTiles, Tile, TileId, TileType,
 };
 use base64::{prelude::BASE64_STANDARD, Engine};
@@ -27,11 +27,12 @@ use tracing::{info, warn};
 
 // for documentation
 #[allow(unused_imports)]
-use crate::utils::level::{BranefuckProgram, InputValue};
+use crate::level::{BranefuckProgram, InputValue};
 
 /// Attempts to parse the input as a valid sequence of tiles.
 ///
 /// # Errors
+///
 /// Returns an error if any tile was invalid. This includes an invalid
 /// [`TileId`], an invalid [`TileType`], an invalid [`Multiplier`],
 /// or some other invalid input.
@@ -62,6 +63,7 @@ pub fn parse_tiles(input: &str) -> Result<ParsedTiles> {
 /// Attempts to parse the input as a valid sequence of objects.
 ///
 /// # Errors
+///
 /// Returns an error if any object was invalid. This includes an invalid
 /// [`ObjectId`], an invalid [`ObjectType`], an invalid [`Multiplier`],
 /// or some other invalid input.
@@ -112,7 +114,7 @@ fn object_id(input: &str) -> IResult<&str, ObjectId> {
 ///
 /// Examples of valid input: `03`, `17`.
 ///
-/// A [`TileType`] is simply a wrapped [`u8`]. As such, any u8 is a valid
+/// A [`TileType`] is simply a wrapped [`u8`]. As such, any [`u8`] is a valid
 /// [`TileType`]. However, the largeset [`TileType`] found in the wild is
 /// is `17` (found as `wa17`).
 fn tile_type(input: &str) -> IResult<&str, Option<TileType>> {
@@ -140,7 +142,7 @@ fn object_type(input: &str) -> IResult<&str, Option<ObjectType>> {
 ///
 /// Examples of valid input: `X3`, `X17`.
 ///
-/// A [`Multiplier`] is simply a wrapped [`u8`]. As such, any u8 is a valid
+/// A [`Multiplier`] is simply a wrapped [`u8`]. As such, any [`u8`] is a valid
 /// [`Multiplier`]. However, multipliers are prefixed by `X`, so the input
 /// must begin with `X` in order to be valid.
 fn multiplier(input: &str) -> IResult<&str, Option<Multiplier>> {

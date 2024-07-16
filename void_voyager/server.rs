@@ -2,9 +2,9 @@
 //! various Axum server-related functions.
 
 use crate::prelude::*;
-use crate::utils::{
-    level::{Author, IndexLevel, Name, Validated},
-    routers, webui,
+use crate::{
+    routers,
+    webui::{self, backend::Backend},
 };
 use axum::{
     http::StatusCode,
@@ -36,16 +36,17 @@ use time::OffsetDateTime;
 use tokio::signal;
 use tower_http::timeout::TimeoutLayer;
 use tracing::{debug, error, info, warn};
+use void_codex::{Author, IndexLevel, Key, Level, Name, Validated};
 
 // for documentation
 #[allow(unused_imports)]
-use crate::utils::parser;
-#[allow(unused_imports)]
-use crate::utils::{level::Data, routers::post::orphanage, routers::version::version};
+use crate::{routers::post::orphanage, routers::version::version};
 #[allow(unused_imports)]
 use base64::prelude::BASE64_STANDARD;
+#[allow(unused_imports)]
+use void_codex::{parser, Data};
 
-/// List of default allowed songs.
+/// The default list of allowed songs.
 ///
 /// An empty string (`""`) is allowed and means ambience.
 const DEFAULT_ALLOWED_SONGS: [&str; 18] = [
@@ -69,9 +70,9 @@ const DEFAULT_ALLOWED_SONGS: [&str; 18] = [
     "msc_test2",
 ];
 
-/// The default format version used by Voyager.
+/// The latest format version as known by Void Voyager.
 ///
-/// At the time of writing (2024-06-25), this is either `1` or `2`.
+/// At the time of writing (2024-07-16), the latest format version is 2.
 ///
 /// The only difference between these two versions is that version `2`'s Add statues support
 /// [Branefuck](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck).
@@ -87,12 +88,12 @@ const DEFAULT_FORMAT_VERSION: u8 = 2;
 /// As of 2024-06-25, this is `0.89`.
 const DEFAULT_ENDLESS_VOID_VERSION: &str = "0.89";
 
-/// Voyager's data and configuration.
+/// Void Voyager's data and configuration.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AppState {
-    /// Voyager's data (levels, orphans, banned IPs).
+    /// Void Voyager's data (levels, orphans, banned IPs).
     pub data: VoyagerData,
-    /// Voyager's configuration options.
+    /// Void Voyager's configuration options.
     pub config: RwLock<VoyagerConfig>,
 }
 
@@ -148,17 +149,17 @@ pub struct LatestEndlessVoidVersion(pub String);
 
 /// The list of Discord webhook URLs used for level upload messages.
 ///
-/// Voyager can optionally send a Discord message using
+/// Void Voyager can optionally send a Discord message using
 /// the provided webhook URLs when a level is uploaded.
 ///
 /// The default is an empty [`Vec`], which will skip
 /// trying to send the message altogether. Webhook URLs must
-/// be set through the config. Voyager will attempt to send
+/// be set through the config. Void Voyager will attempt to send
 /// to every configured webhook URL.
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct DiscordWebhookUrls(Vec<String>);
 
-/// The old, legacy, deprecated, etc. Voyager config.
+/// The old, legacy, deprecated, etc. Void Voyager config.
 ///
 /// The reason why this exists is because I originally thought that the config
 /// would be simple enough as to not need to use the newtype pattern. Maybe so,
@@ -173,7 +174,7 @@ struct LegacyVoyagerConfig {
     allowed_songs: Vec<String>,
     /// The list of allowed characters for tiles and objects.
     ///
-    /// This is deprecated. Since Voyager 0.9.0, a new, more sophisticated parser
+    /// This is deprecated. Since Void Voyager 0.9.0, a new, more sophisticated parser
     /// is used to validate a level's tiles and objects. Therefore, this is no
     /// longer needed. See [`parser`] for the new parser.
     #[allow(dead_code)] // deprecated field
@@ -190,13 +191,14 @@ struct LegacyVoyagerConfig {
 }
 
 impl AppState {
-    /// Attempts to load a Voyager database from
+    /// Attempts to load a Void Voyager database from
     /// `voyager/levels.db`. If it fails (likely due
     /// to it not yet existing), it instead creates
     /// a default one.
     ///
     /// # Errors
-    /// Returns an error if a Voyager database is
+    ///
+    /// Returns an error if a Void Voyager database is
     /// found, but deserializing it fails. Most
     /// likely, some data structure had a breaking
     /// change (or the file is corrupted).
@@ -299,13 +301,15 @@ impl AppState {
     /// every configured webhook URL with information about the level.
     ///
     /// This is used to optionally notify one or more Discord channels
-    /// when a level is uploaded to Voyager.
+    /// when a level is uploaded to Void Voyager.
     fn send_discord_message(&self, level: Level<Validated>) {
         let webhook_urls = self.config.read().discord_webhook_urls.0.clone();
         if webhook_urls.is_empty() {
             return;
         }
-        let Ok(parsed) = level.into_parsed(&self.config.read()) else {
+        let latest_version = self.config.read().latest_format_version.0;
+        let allowed_songs = &self.config.read().allowed_songs.0;
+        let Ok(parsed) = level.into_parsed(latest_version, allowed_songs) else {
             warn!("could not parse level for some reason?");
             return;
         };
@@ -404,7 +408,7 @@ Content-Type: image/png
         }
     }
 
-    /// Bans the specified IP address from Voyager.
+    /// Bans the specified IP address from Void Voyager.
     ///
     /// Specifically, it will add the IP address to
     /// the ban list, as well as delete all levels
@@ -456,6 +460,7 @@ Content-Type: image/png
     /// level currently being updated.
     ///
     /// # Errors
+    ///
     /// Returns an error if the database already contains a level with the same name
     /// and author as the input.
     // due to the #[cfg(debug_assertions)], the Err variant is
@@ -502,26 +507,29 @@ Content-Type: image/png
     #[must_use]
     /// Parses and returns all stored levels.
     pub fn index_levels(&self) -> Vec<IndexLevel> {
+        let latest_version = self.config.read().latest_format_version.0;
+        let allowed_songs = &self.config.read().allowed_songs.0;
         self.data
             .levels
             .clone()
             .into_read_only()
             .values()
             .cloned()
-            .filter_map(|level| level.into_parsed(&self.config.read()).ok())
+            .filter_map(|level| level.into_parsed(latest_version, allowed_songs).ok())
             .map(IndexLevel::new)
             .collect()
     }
 }
 
 impl VoyagerData {
-    /// Attempts to load a Voyager database from `voyager/levels.db`.
+    /// Attempts to load a Void Voyager database from `voyager/levels.db`.
     ///
     /// If reading the file fails (likely due to it not yet existing),
     /// it instead creates a new one using `Self::default()`, which
     /// creates an empty database.
     ///
     /// # Errors
+    ///
     /// - [`Error::Bincode`] if deserializing the file fails.
     fn try_load() -> Result<Self> {
         debug!("Database is opening...");
@@ -588,14 +596,15 @@ impl VoyagerConfig {
         };
     }
 
-    /// Attempts to load a Voyager config from `voyager/config.ron`.
+    /// Attempts to load a Void Voyager config from `voyager/config.ron`.
     ///
     /// If it fails (likely due to it not yet existing), it
     /// instead creates a new one using `Self::default()`,
     /// which will use a set of at-the-time correct defaults.
     ///
     /// # Errors
-    /// Returns an error if a Voyager config is found, but
+    ///
+    /// Returns an error if a Void Voyager config is found, but
     /// deserializing it fails. Most likely, some data structure
     /// had a breaking change (or the file is corrupted).
     pub fn try_load() -> Result<Self> {
@@ -638,10 +647,10 @@ impl VoyagerConfig {
         )
     }
 
-    /// Attempts to load a Voyager config from `voyager/config.ron`.
+    /// Attempts to load a Void Voyager config from `voyager/config.ron`.
     ///
     /// This function is used for hot reloading the config
-    /// while Voyager is running.
+    /// while Void Voyager is running.
     ///
     /// If it fails (likely due to the configuration being
     /// changed to something invalid), it logs it and keeps
@@ -688,9 +697,21 @@ impl AllowedSongs {
     }
 }
 
+impl AsRef<[String]> for AllowedSongs {
+    fn as_ref(&self) -> &[String] {
+        &self.0
+    }
+}
+
 impl Default for AllowedSongs {
     fn default() -> Self {
         Self(DEFAULT_ALLOWED_SONGS.map(ToString::to_string).to_vec())
+    }
+}
+
+impl From<LatestFormatVersion> for u8 {
+    fn from(input: LatestFormatVersion) -> Self {
+        input.0
     }
 }
 
@@ -706,9 +727,10 @@ impl Default for LatestEndlessVoidVersion {
     }
 }
 
-/// Starts the Voyager server on port 3000.
+/// Starts the Void Voyager server on port 3000.
 ///
 /// # Errors
+///
 /// Returns an error if the app could not be served.
 pub async fn start_voyager(app_state: SharedAppState, backend: Backend) -> Result<()> {
     tokio::spawn(backup_state_daily(app_state.clone()));
@@ -727,7 +749,7 @@ async fn backup_state_daily(app_state: SharedAppState) {
     }
 }
 
-/// Creates a new [`Router`] for Voyager.
+/// Creates a new [`Router`] for Void Voyager.
 fn create_router(app_state: SharedAppState, backend: Backend) -> Router {
     let session_store = MemoryStore::default();
     let session_layer = SessionManagerLayer::new(session_store).with_secure(false);
@@ -758,10 +780,10 @@ fn create_router(app_state: SharedAppState, backend: Backend) -> Router {
         .layer(auth_layer)
 }
 
-/// Serves the Voyager app on port 3000.
+/// Serves the Void Voyager app on port 3000.
 async fn serve_app(app: Router) -> Result<()> {
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
-    info!("Voyager started. Listening on port 3000...");
+    info!("Void Voyager started. Listening on port 3000...");
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
