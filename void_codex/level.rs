@@ -107,16 +107,12 @@ pub struct Object {
     pub multiplier: Option<Multiplier>,
 }
 
-/// All valid tile IDs, plus an "unknown" variant.
+/// All valid tile IDs.
 ///
 /// Every ID is encoded as 2 lowercase characters, e.g. `wa` means wall.
 #[non_exhaustive]
 #[derive(Debug, Display, Clone, Serialize, Deserialize, EnumString)]
 pub enum TileId {
-    /// An unknown ID. Encoded as the input.
-    #[display("{_0}")]
-    #[strum(default)]
-    Unknown(String),
     /// Encoded as `pt`.
     #[display("pt")]
     #[strum(serialize = "pt")]
@@ -191,16 +187,12 @@ pub enum TileId {
     SmallChest,
 }
 
-/// All valid object IDs, plus an "unknown" variant.
+/// All valid object IDs.
 ///
 /// Every ID is encoded as 2 lowercase characters, e.g. `pl` means player.
 #[derive(Debug, Display, Clone, Serialize, Deserialize, EnumString)]
 #[non_exhaustive]
 pub enum ObjectId {
-    /// An unknown ID. Encoded as the input.
-    #[display("{_0}")]
-    #[strum(default)]
-    Unknown(String),
     /// Encoded as `em`.
     #[display("em")]
     #[strum(serialize = "em")]
@@ -854,7 +846,6 @@ impl ParsedTiles {
         let mut map = String::new();
         for tile in &self.0 {
             let emoji = match tile.id {
-                TileId::Unknown(_) => "❓️",
                 TileId::Pit | TileId::Edge | TileId::DISEdge => "⬛️",
                 TileId::Floor | TileId::BlankFloor => "⬜️",
                 TileId::Glass => "🪟",
@@ -908,7 +899,6 @@ impl ParsedObjects {
         let mut emojis = String::new();
         for object in &self.0 {
             let emoji = match object.id {
-                ObjectId::Unknown(_) => "❓️",
                 ObjectId::Empty | ObjectId::SecretExit => "❌",
                 ObjectId::Player => "🧑",
                 ObjectId::Leech => "🐍",

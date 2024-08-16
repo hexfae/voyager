@@ -690,13 +690,6 @@ impl From<LegacyVoyagerConfig> for VoyagerConfig {
     }
 }
 
-impl AllowedSongs {
-    /// Returns `true` if the song is in the list of allowed songs.
-    pub fn contains(&self, input: impl AsRef<str>) -> bool {
-        self.0.iter().any(|s| s == input.as_ref())
-    }
-}
-
 impl AsRef<[String]> for AllowedSongs {
     fn as_ref(&self) -> &[String] {
         &self.0

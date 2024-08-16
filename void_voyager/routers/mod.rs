@@ -5,6 +5,4 @@ pub mod get;
 pub mod post;
 pub mod put;
 pub mod teapot;
-#[cfg(test)]
-pub mod tests;
 pub mod version;

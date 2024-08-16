@@ -23,11 +23,10 @@ struct Levels {
 
 /// The main page of the Void Voyager Web UI.
 pub async fn index(auth_session: AuthSession) -> impl IntoResponse {
-    auth_session
-        .user
-        .map_or(Html(r"unauthorized").into_response(), |_| {
-            Index.into_response()
-        })
+    auth_session.user.map_or_else(
+        || Html(r"unauthorized").into_response(),
+        |_| Index.into_response(),
+    )
 }
 
 /// Displays all levels.
@@ -66,9 +65,8 @@ pub async fn delete(State(db): State<SharedAppState>, key: Path<String>) -> impl
 /// See the `levels.html` template for details.
 fn return_levels(auth_session: AuthSession, db: &SharedAppState) -> impl IntoResponse {
     let levels = db.index_levels();
-    auth_session
-        .user
-        .map_or(Html(r"unauthorized").into_response(), |_| {
-            Levels { levels }.into_response()
-        })
+    auth_session.user.map_or_else(
+        || Html(r"unauthorized").into_response(),
+        |_| Levels { levels }.into_response(),
+    )
 }
