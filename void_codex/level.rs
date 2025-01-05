@@ -968,7 +968,6 @@ impl ObjectType {
     /// # Errors
     ///
     /// Returns an error on invalid input data for an Add statue.
-
     // nom's count function returns a Vec, which
     // isn't needed here (a slice would be fine),
     // but there's no easy, non-ugly way to make
