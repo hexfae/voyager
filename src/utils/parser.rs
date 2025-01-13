@@ -14,7 +14,7 @@ use itertools::Itertools;
 use nom::{
     branch::alt,
     bytes::complete::take_while_m_n,
-    bytes::complete::{take, take_until1, take_while, take_while1},
+    bytes::complete::{take, take_until, take_until1, take_while, take_while1},
     character::complete::char,
     combinator::map_res,
     combinator::{all_consuming, opt},
@@ -261,7 +261,7 @@ fn take_until_termination_character(input: &str) -> IResult<&str, &str> {
 /// This is used in many places. For example, most parameters of Add statues
 /// are `!`-terminated, as well as all messages of eggs.
 fn take_until_termination_character_then_decode_base64(input: &str) -> IResult<&str, String> {
-    terminated(map_res(take_until1("!"), decode_base64), char('!'))(input)
+    terminated(map_res(take_until("!"), decode_base64), char('!'))(input)
 }
 
 /// Attempts to Base64-decode the input.
