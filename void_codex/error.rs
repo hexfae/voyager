@@ -8,8 +8,8 @@ use thiserror::Error;
 // for documentation
 #[allow(unused_imports)]
 use crate::{
-    parser, Direction, InputValue, Objects, Tiles, BRAND_36_BITS, BURDENS_4_BITS, MAX_AUTHOR_LEN,
-    MAX_DESCRIPTION_LEN, MAX_NAME_LEN,
+    BRAND_36_BITS, BURDENS_4_BITS, Direction, InputValue, MAX_AUTHOR_LEN, MAX_DESCRIPTION_LEN,
+    MAX_NAME_LEN, Objects, Tiles, parser,
 };
 #[allow(unused_imports)]
 use std::str::FromStr;
@@ -51,11 +51,11 @@ pub enum Error {
     #[error("invalid burdens: {0}")]
     InvalidBurdens(NumberError),
     /// The level's tiles are considered invalid by the [`parser`].
-    #[error("invalid tiles")]
-    InvalidTiles,
+    #[error("invalid tile: {0}")]
+    InvalidTile(String),
     /// The level's objects are considered invalid by the [`parser`].
-    #[error("invalid objects")]
-    InvalidObjects,
+    #[error("invalid object: {0}")]
+    InvalidObject(String),
     /// The key is not a valid [ULID](https://github.com/ulid/spec) key.
     #[error("key error: {0}")]
     InvalidKey(#[from] ulid::DecodeError),

@@ -6,12 +6,13 @@
 
 use crate::prelude::*;
 
-use crate::level::{
+use crate::sector::{
     Multiplier, Object, ObjectId, ObjectType, ParsedObjects, ParsedTiles, Tile, TileId, TileType,
 };
-use base64::{prelude::BASE64_STANDARD, Engine};
+use base64::{Engine, prelude::BASE64_STANDARD};
 use itertools::Itertools;
 use nom::{
+    IResult,
     branch::alt,
     bytes::complete::take_while_m_n,
     bytes::complete::{take, take_until, take_until1, take_while, take_while1},
@@ -20,14 +21,13 @@ use nom::{
     combinator::{all_consuming, opt},
     multi::{count, many1},
     sequence::{pair, preceded, terminated, tuple},
-    IResult,
 };
 use std::str::FromStr;
 use tracing::{info, warn};
 
 // for documentation
 #[allow(unused_imports)]
-use crate::level::{BranefuckProgram, InputValue};
+use crate::sector::{BranefuckProgram, InputValue};
 
 /// Attempts to parse the input as a valid sequence of tiles.
 ///
@@ -40,9 +40,9 @@ pub fn parse_tiles(input: &str) -> Result<ParsedTiles> {
     let (_, tiles) =
         all_consuming(many1(tuple((tile_id, tile_type, multiplier))))(input).map_err(|why| {
             warn!("{why}");
-            Error::InvalidTiles
+            Error::InvalidTile(why.to_string())
         })?;
-    let tiles = ParsedTiles(
+    let tiles = ParsedTiles::new(
         tiles
             .into_iter()
             .map(|(id, tile_type, multiplier)| Tile {
@@ -71,9 +71,9 @@ pub fn parse_objects(input: &str) -> Result<ParsedObjects> {
     let (_, objects) = all_consuming(many1(tuple((object_id, object_type, multiplier))))(input)
         .map_err(|why| {
             warn!("{why}");
-            Error::InvalidObjects
+            Error::InvalidObject(why.to_string())
         })?;
-    let objects = ParsedObjects(
+    let objects = ParsedObjects::new(
         objects
             .into_iter()
             .map(|(id, object_type, multiplier)| Object {
@@ -276,9 +276,9 @@ fn decode_base64(input: &str) -> Result<String> {
     String::from_utf8(
         BASE64_STANDARD
             .decode(input)
-            .map_err(|_| Error::InvalidObjects)?,
+            .map_err(|why| Error::InvalidObject(why.to_string()))?,
     )
-    .map_err(|_| Error::InvalidObjects)
+    .map_err(|why| Error::InvalidObject(why.to_string()))
 }
 
 /// Tests if the character is an ASCII digit: `0-9`.
