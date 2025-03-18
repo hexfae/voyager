@@ -6,9 +6,8 @@ Void Voyager is the server back-end for [Endless Void](https://github.com/Skirle
 
 Besides the standard features you'd expect from a server/database (CRUD), Void Voyager boasts:
 
-- A sophisticated level parser/validator
 - Extensive logging
-- Comprehensive documentation (100% coverage)
+- Comprehensive documentation
 - Tests (soon)
 - Optional Discord webhook for notifying of level uploads
 - A web UI
@@ -38,11 +37,10 @@ Void Voyager is the server back-end for [Endless Void](https://github.com/Skirle
 
 A Web UI is available at `/voyager/webui`. The Web UI may be used for administrative tasks, such as deleting naughty levels.
 
+## To-do
+
+- [ ] Tests
+
 ## Contributing
 
 Please contribute
-
-## To-do
-
-- [ ] Level packs
-- [ ] Tests

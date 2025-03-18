@@ -1022,7 +1022,7 @@ impl BrandImage {
         let mut buf = Cursor::new(Vec::new());
         if let Err(why) = img.write_to(&mut buf, ImageFormat::Png) {
             warn!("something went wrong while writing image to buffer! {why}");
-        };
+        }
         Self {
             bytes: buf.clone().into_inner(),
             base64: BASE64_STANDARD.encode(buf.into_inner()),
@@ -1073,7 +1073,7 @@ impl FromStr for Tiles {
         // only log if an error happens
         if let Err(why) = ParsedTiles::from_str(input) {
             warn!("error while parsing tiles: {why}");
-        };
+        }
         Ok(Self(input.to_owned()))
     }
 }
@@ -1135,7 +1135,7 @@ impl FromStr for Objects {
         // only log if an error happens
         if let Err(why) = ParsedObjects::from_str(input) {
             warn!("error while parsing objects: {why}");
-        };
+        }
         Ok(Self(input.to_string()))
     }
 }

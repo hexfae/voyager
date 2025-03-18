@@ -56,7 +56,7 @@ pub fn parse_tiles(input: &str) -> Result<ParsedTiles> {
         warn!("mismatch!");
         info!("input: {input}");
         info!("recreated: {tiles}");
-    };
+    }
     Ok(tiles)
 }
 
@@ -87,7 +87,7 @@ pub fn parse_objects(input: &str) -> Result<ParsedObjects> {
         warn!("mismatch!");
         info!("input: {input}");
         info!("recreated: {objects}");
-    };
+    }
     Ok(objects)
 }
 

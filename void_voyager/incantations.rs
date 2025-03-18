@@ -92,7 +92,7 @@ pub async fn amend(
     if nexus.manifest.origin_is_banned(origin.ip()) {
         info!("banned");
         return StatusCode::FORBIDDEN.into_response();
-    };
+    }
     nexus.atlas.amend(
         sector_and_sigil,
         origin.ip(),

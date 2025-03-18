@@ -3,18 +3,16 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use dashmap::{DashMap, DashSet};
+use miette::Diagnostic;
 use serde::{Deserialize, Serialize};
+use snafu::{ResultExt, Snafu};
 use std::{
-    fs::{read, read_to_string},
+    fs::{read, read_to_string, write},
     net::IpAddr,
     sync::Arc,
 };
 use tracing::{info, warn};
 use void_codex::{Sector, Sigil};
-
-use crate::error::Error;
-
-type Result<T, E = Error> = std::result::Result<T, E>;
 
 // maybe AstralIndex
 #[derive(Debug, Clone)]
@@ -40,6 +38,7 @@ pub struct Manifest {
     #[serde(default)]
     discord_webhook_urls: DiscordWebhookUrls,
     #[serde(default)]
+    #[serde(rename = "banned_ips")]
     banned_origins: BannedOrigins,
 }
 
@@ -78,31 +77,106 @@ pub struct DiscordWebhookUrls(Vec<String>);
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct BannedOrigins(DashSet<IpAddr>);
 
+#[derive(Debug, Snafu, Diagnostic)]
+pub enum NexusError {
+    #[snafu(transparent)]
+    #[diagnostic(transparent)]
+    Atlas { source: AtlasError },
+    #[snafu(transparent)]
+    #[diagnostic(transparent)]
+    Manifest { source: ManifestError },
+}
+
 impl Nexus {
-    pub fn try_load() -> Result<Self> {
+    pub fn try_load() -> Result<Self, NexusError> {
         Ok(Self {
             atlas: Arc::new(Atlas::try_load()?),
             manifest: Arc::new(Manifest::try_load()?),
         })
     }
+
+    pub fn try_save(&self) -> Result<(), NexusError> {
+        self.atlas.try_save()?;
+        self.manifest.try_save()?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Snafu, Diagnostic)]
+pub enum AtlasError {
+    #[snafu(display("Failed to open the levels file"))]
+    #[diagnostic(
+        code(void_voyager::nexus::AtlasError::ReadAtlas),
+        help("Do you have read permissions for the file?")
+    )]
+    ReadAtlas { source: std::io::Error },
+    #[snafu(display("Failed to deserialize the opened levels file"))]
+    #[diagnostic(
+        code(void_voyager::nexus::AtlasError::DecodeAtlas),
+        help("Was there a breaking change? Let me know!")
+    )]
+    DecodeAtlas { source: Box<bincode::ErrorKind> },
+    #[snafu(display("Failed to serialize the levels"))]
+    #[diagnostic(
+        code(void_voyager::nexus::AtlasError::EncodeAtlas),
+        help("You're on your own for this one.")
+    )]
+    EncodeAtlas { source: Box<bincode::ErrorKind> },
+    #[snafu(display("Failed to write the levels file"))]
+    #[diagnostic(
+        code(void_voyager::nexus::AtlasError::WriteAtlas),
+        help("Do you have write permissions for the file?")
+    )]
+    WriteAtlas { source: std::io::Error },
+}
+
+fn try_open_file_bytes(path: impl AsRef<str>) -> Result<Option<Vec<u8>>, std::io::Error> {
+    match read(path.as_ref()) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(why) => {
+            if why.kind() == std::io::ErrorKind::NotFound {
+                Ok(None)
+            } else {
+                Err(why)
+            }
+        }
+    }
+}
+
+fn try_open_file_string(path: impl AsRef<str>) -> Result<Option<String>, std::io::Error> {
+    match read_to_string(path.as_ref()) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(why) => {
+            if why.kind() == std::io::ErrorKind::NotFound {
+                Ok(None)
+            } else {
+                Err(why)
+            }
+        }
+    }
 }
 
 impl Atlas {
-    pub fn try_load() -> Result<Self> {
-        read("voyager/config.ron").map_or_else(
-            |_| Ok(Self::default()),
-            |atlas| match bincode::deserialize(&atlas) {
-                Ok(atlas) => Ok(atlas),
-                Err(why) => Err(Error::ReadAtlas { source: why }),
-            },
-        )
+    pub fn try_load() -> Result<Self, AtlasError> {
+        let bytes = try_open_file_bytes("voyager/levels.db").context(ReadAtlasSnafu)?;
+        match bytes {
+            Some(bytes) => Ok(bincode::deserialize(&bytes).context(DecodeAtlasSnafu)?),
+            None => Ok(Self::default()),
+        }
+    }
+
+    pub fn try_save(&self) -> Result<(), AtlasError> {
+        let bytes = bincode::serialize(&self).context(EncodeAtlasSnafu)?;
+        write("voyager/levels.db", bytes).context(WriteAtlasSnafu)?;
+        Ok(())
     }
 
     pub fn name_and_author_collision_found(&self, new: &Sector) -> bool {
-        self.sectors
-            .iter()
-            .find(|sector| new.name() == sector.name() && new.author() == sector.author())
-            .is_some_and(|found| new.sigil() != found.sigil())
+        self.sectors.iter().any(|sector| {
+            sector.name() == new.name()
+                && sector.author() == new.author()
+                && sector.sigil() != new.sigil()
+        })
     }
 
     pub fn unveil(&self) -> Response {
@@ -191,7 +265,7 @@ impl Atlas {
         };
         if sector.set_uploaded_from(&old_sector).is_err() {
             warn!("failed to set uploaded from old level");
-        };
+        }
         info!("{} by {} edited", sector.name(), sector.author());
         self.sectors.insert(sigil, sector);
         StatusCode::NO_CONTENT.into_response()
@@ -209,21 +283,55 @@ impl Atlas {
     }
 }
 
+#[derive(Debug, Snafu, Diagnostic)]
+pub enum ManifestError {
+    #[snafu(display("Failed to open the config file"))]
+    #[diagnostic(
+        code(void_voyager::nexus::ManifestError::ReadManifest),
+        help("Do you have read permissions for the file?")
+    )]
+    ReadManifest { source: std::io::Error },
+    #[snafu(display("Failed to deserialize the opened config"))]
+    #[diagnostic(
+        code(void_voyager::nexus::ManifestError::DecodeManifest),
+        help("Is the config correctly formatted?")
+    )]
+    DecodeManifest { source: ron::de::SpannedError },
+    #[snafu(display("Failed to serialize the config"))]
+    #[diagnostic(
+        code(void_voyager::nexus::ManifestError::EncodeManifest),
+        help("You're on your own for this one.")
+    )]
+    EncodeManifest { source: ron::error::Error },
+    #[snafu(display("Failed to write the config file"))]
+    #[diagnostic(
+        code(void_voyager::nexus::ManifestError::WriteManifest),
+        help("Do you have write permissions for the file?")
+    )]
+    WriteManifest { source: std::io::Error },
+}
+
 impl Manifest {
-    pub fn try_load() -> Result<Self> {
-        read_to_string("voyager/config.ron").map_or_else(
-            |_| Ok(Self::default()),
-            |manifest| match ron::from_str::<Self>(&manifest) {
-                Ok(manifest) => Ok(manifest),
-                Err(why) => Err(Error::ReadManifest { source: why }),
-            },
-        )
+    pub fn try_load() -> Result<Self, ManifestError> {
+        let string = try_open_file_string("voyager/config.ron").context(ReadManifestSnafu)?;
+        match string {
+            Some(string) => Ok(ron::de::from_str(&string).context(DecodeManifestSnafu)?),
+            None => Ok(Self::default()),
+        }
+    }
+
+    pub fn try_save(&self) -> Result<(), ManifestError> {
+        let string = ron::ser::to_string_pretty(&self, ron::ser::PrettyConfig::default())
+            .context(EncodeManifestSnafu)?;
+        write("voyager/config.ron", string).context(WriteManifestSnafu)?;
+        Ok(())
     }
 
     pub fn origin_is_banned(&self, origin: IpAddr) -> bool {
         self.banned_origins.0.contains(&origin)
     }
 
+    #[allow(clippy::missing_const_for_fn)]
     pub fn allowed_songs(&self) -> &[String] {
         &self.allowed_songs.0
     }
@@ -238,10 +346,12 @@ impl Manifest {
         (StatusCode::OK, latest_endless_void_version).into_response()
     }
 
+    #[allow(clippy::missing_const_for_fn)]
     pub fn latest_endless_void_version(&self) -> &str {
         &self.latest_endless_void_version.0
     }
 
+    #[allow(clippy::missing_const_for_fn)]
     pub fn discord_webhook_urls(&self) -> &[String] {
         &self.discord_webhook_urls.0
     }
