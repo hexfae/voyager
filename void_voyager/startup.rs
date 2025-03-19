@@ -1,18 +1,26 @@
-use std::{fs::create_dir, net::SocketAddr};
+use std::{fs::create_dir, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 
 use crate::{
     incantations::{adopt, amend, beacon, expunge, inscribe, probe, unveil},
-    nexus::Nexus,
+    nexus::{Manifest, Nexus},
 };
 use axum::{
     Router,
     routing::{get, post},
 };
 use miette::{Diagnostic, Result};
+use notify_debouncer_full::{
+    DebounceEventResult, Debouncer, NoCache, new_debouncer,
+    notify::{
+        EventKind, INotifyWatcher, RecursiveMode,
+        event::{AccessKind, AccessMode},
+    },
+};
 use owo_colors::OwoColorize;
+use parking_lot::RwLock;
 use snafu::{ResultExt, Snafu};
 use tokio::net::TcpListener;
-use tracing::{error, level_filters::LevelFilter, warn};
+use tracing::{error, info, level_filters::LevelFilter, warn};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{
     Layer, Registry, fmt,
@@ -61,9 +69,75 @@ struct DirectoryError {
     source: std::io::Error,
 }
 
-pub async fn serve_voyager() -> miette::Result<()> {
-    let nexus = Nexus::try_load()?;
-    nexus.try_save()?;
+fn event_handler(res: DebounceEventResult, manifest: Arc<RwLock<Manifest>>) {
+    match res {
+        Err(errors) => {
+            for why in errors {
+                warn!("while watching config file! {why}");
+            }
+        }
+        Ok(events) => {
+            for event in events {
+                // certain text editors (e.g. helix) will "modify" a file by creating a temporary
+                // file, deleting the original, and then moving (?) the new file over where the
+                // original was. i'm sure some other text editors just modify the old file in place
+                if (event.kind.is_modify() || event.kind.is_create())
+                    && event.paths.iter().any(|path| path.ends_with("config.ron"))
+                {
+                    info!("Config is reloading...");
+                    if let Err(why) = manifest.write().reload() {
+                        warn!("while reloading config! {why}");
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Snafu, Diagnostic)]
+pub enum ConfigWatchError {
+    #[snafu(display("Failed to create config debouncer"))]
+    #[diagnostic(
+        code(void_voyager::main::watch_config),
+        help("You're on your own for this one.")
+    )]
+    DebounceError {
+        source: notify_debouncer_full::notify::Error,
+    },
+    #[snafu(display("Failed to watch config file"))]
+    #[diagnostic(
+        code(void_voyager::main::watch_config),
+        help("You're on your own for this one.")
+    )]
+    WatchError {
+        source: notify_debouncer_full::notify::Error,
+    },
+}
+
+pub trait WatchVoyagerConfig {
+    fn watch_voyager_config(&mut self) -> Result<(), ConfigWatchError>;
+}
+
+impl WatchVoyagerConfig for Debouncer<INotifyWatcher, NoCache> {
+    fn watch_voyager_config(&mut self) -> Result<(), ConfigWatchError> {
+        self.watch(
+            "voyager",
+            notify_debouncer_full::notify::RecursiveMode::NonRecursive,
+        )
+        .context(WatchSnafu)
+    }
+}
+
+pub fn watch_config(
+    manifest: Arc<RwLock<Manifest>>,
+) -> Result<Debouncer<INotifyWatcher, NoCache>, ConfigWatchError> {
+    new_debouncer(Duration::from_secs(1), None, move |res| {
+        event_handler(res, manifest.clone())
+    })
+    .context(DebounceSnafu)
+}
+
+pub async fn serve_voyager(nexus: Nexus) -> miette::Result<()> {
     let app = Router::new()
         .route(
             "/voyager",

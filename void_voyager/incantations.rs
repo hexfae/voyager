@@ -28,7 +28,7 @@ pub async fn beacon(
     State(nexus): State<Nexus>,
     ConnectInfo(origin): ConnectInfo<SocketAddr>,
 ) -> Response {
-    nexus.manifest.latest_endless_void_version_response()
+    nexus.manifest.read().latest_endless_void_version_response()
 }
 
 #[instrument(
@@ -54,15 +54,15 @@ pub async fn inscribe(
     ConnectInfo(origin): ConnectInfo<SocketAddr>,
     sector: String,
 ) -> Response {
-    if nexus.manifest.origin_is_banned(origin.ip()) {
+    if nexus.manifest.read().origin_is_banned(origin.ip()) {
         info!("banned");
         return StatusCode::FORBIDDEN.into_response();
     }
     nexus.atlas.inscribe(
         sector,
         origin.ip(),
-        nexus.manifest.latest_format_version(),
-        nexus.manifest.allowed_songs(),
+        nexus.manifest.read().latest_format_version(),
+        nexus.manifest.read().allowed_songs(),
     )
 }
 
@@ -89,15 +89,15 @@ pub async fn amend(
     ConnectInfo(origin): ConnectInfo<SocketAddr>,
     sector_and_sigil: String,
 ) -> Response {
-    if nexus.manifest.origin_is_banned(origin.ip()) {
+    if nexus.manifest.read().origin_is_banned(origin.ip()) {
         info!("banned");
         return StatusCode::FORBIDDEN.into_response();
     }
     nexus.atlas.amend(
         sector_and_sigil,
         origin.ip(),
-        nexus.manifest.latest_format_version(),
-        nexus.manifest.allowed_songs(),
+        nexus.manifest.read().latest_format_version(),
+        nexus.manifest.read().allowed_songs(),
     )
 }
 

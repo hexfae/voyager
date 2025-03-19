@@ -4,6 +4,7 @@ use axum::{
 };
 use dashmap::{DashMap, DashSet};
 use miette::Diagnostic;
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
 use std::{
@@ -18,7 +19,7 @@ use void_codex::{Sector, Sigil};
 #[derive(Debug, Clone)]
 pub struct Nexus {
     pub atlas: Arc<Atlas>,
-    pub manifest: Arc<Manifest>,
+    pub manifest: Arc<RwLock<Manifest>>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -91,13 +92,13 @@ impl Nexus {
     pub fn try_load() -> Result<Self, NexusError> {
         Ok(Self {
             atlas: Arc::new(Atlas::try_load()?),
-            manifest: Arc::new(Manifest::try_load()?),
+            manifest: Arc::new(RwLock::new(Manifest::try_load()?)),
         })
     }
 
     pub fn try_save(&self) -> Result<(), NexusError> {
         self.atlas.try_save()?;
-        self.manifest.try_save()?;
+        self.manifest.read().try_save()?;
         Ok(())
     }
 }
@@ -324,6 +325,12 @@ impl Manifest {
         let string = ron::ser::to_string_pretty(&self, ron::ser::PrettyConfig::default())
             .context(EncodeManifestSnafu)?;
         write("voyager/config.ron", string).context(WriteManifestSnafu)?;
+        Ok(())
+    }
+
+    pub fn reload(&mut self) -> Result<(), ManifestError> {
+        let new = Manifest::try_load()?;
+        *self = new;
         Ok(())
     }
 
