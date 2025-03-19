@@ -1,20 +1,16 @@
-use std::{fs::create_dir, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
+use std::{fs::create_dir, net::SocketAddr, sync::Arc, time::Duration};
 
 use crate::{
     incantations::{adopt, amend, beacon, expunge, inscribe, probe, unveil},
-    nexus::{Manifest, Nexus},
+    nexus::{Atlas, Manifest, Nexus},
 };
 use axum::{
     Router,
     routing::{get, post},
 };
-use miette::{Diagnostic, Result};
+use miette::{Diagnostic, IntoDiagnostic, Result};
 use notify_debouncer_full::{
-    DebounceEventResult, Debouncer, NoCache, new_debouncer,
-    notify::{
-        EventKind, INotifyWatcher, RecursiveMode,
-        event::{AccessKind, AccessMode},
-    },
+    DebounceEventResult, Debouncer, NoCache, new_debouncer, notify::INotifyWatcher,
 };
 use owo_colors::OwoColorize;
 use parking_lot::RwLock;
@@ -84,9 +80,11 @@ fn event_handler(res: DebounceEventResult, manifest: Arc<RwLock<Manifest>>) {
                 if (event.kind.is_modify() || event.kind.is_create())
                     && event.paths.iter().any(|path| path.ends_with("config.ron"))
                 {
-                    info!("Config is reloading...");
-                    if let Err(why) = manifest.write().reload() {
-                        warn!("while reloading config! {why}");
+                    if let Err(why) = manifest.write().reload().into_diagnostic() {
+                        warn!("Error reloading config!");
+                        println!("{why:?}");
+                    } else {
+                        info!("Reloaded config!");
                     }
                 }
             }
@@ -135,6 +133,15 @@ pub fn watch_config(
         event_handler(res, manifest.clone())
     })
     .context(DebounceSnafu)
+}
+
+pub async fn backup_levels_daily(atlas: Arc<Atlas>) {
+    let one_day = Duration::from_secs(60 * 60 * 24);
+    let mut interval = tokio::time::interval(one_day);
+    loop {
+        interval.tick().await;
+        atlas.backup();
+    }
 }
 
 pub async fn serve_voyager(nexus: Nexus) -> miette::Result<()> {

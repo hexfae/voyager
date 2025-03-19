@@ -12,8 +12,11 @@ use std::{
     net::IpAddr,
     sync::Arc,
 };
-use tracing::{info, warn};
+use time::OffsetDateTime;
+use tracing::{debug, info, warn};
 use void_codex::{Sector, Sigil};
+
+const CONFIG_PATH: &str = "voyager/config.ron";
 
 // maybe AstralIndex
 #[derive(Debug, Clone)]
@@ -172,6 +175,30 @@ impl Atlas {
         Ok(())
     }
 
+    pub fn backup(&self) {
+        let now = OffsetDateTime::now_utc()
+            // 2025-03-19
+            .date()
+            .to_string();
+        let path = format!("voyager/backups/{now}.db");
+        debug!("Backup is being created at {path}...");
+
+        match bincode::serialize(&self) {
+            Err(why) => {
+                warn!("Backup could not be created: {why}");
+            }
+            Ok(bytes) => {
+                debug!("Backup created. Backup is saving...");
+                let len = bytes.len();
+                if let Err(why) = write(path, bytes) {
+                    warn!("Backup could not be saved: {why}");
+                } else {
+                    debug!("Backup saved: {len} bytes.");
+                }
+            }
+        }
+    }
+
     pub fn name_and_author_collision_found(&self, new: &Sector) -> bool {
         self.sectors.iter().any(|sector| {
             sector.name() == new.name()
@@ -295,7 +322,7 @@ pub enum ManifestError {
     #[snafu(display("Failed to deserialize the opened config"))]
     #[diagnostic(
         code(void_voyager::nexus::ManifestError::DecodeManifest),
-        help("Is the config correctly formatted?")
+        help("Did you forget a parenthesis?")
     )]
     DecodeManifest { source: ron::de::SpannedError },
     #[snafu(display("Failed to serialize the config"))]
@@ -314,17 +341,17 @@ pub enum ManifestError {
 
 impl Manifest {
     pub fn try_load() -> Result<Self, ManifestError> {
-        let string = try_open_file_string("voyager/config.ron").context(ReadManifestSnafu)?;
+        let string = try_open_file_string(CONFIG_PATH).context(ReadManifestSnafu)?;
         match string {
-            Some(string) => Ok(ron::de::from_str(&string).context(DecodeManifestSnafu)?),
             None => Ok(Self::default()),
+            Some(string) => Ok(ron::de::from_str(&string).context(DecodeManifestSnafu)?),
         }
     }
 
     pub fn try_save(&self) -> Result<(), ManifestError> {
         let string = ron::ser::to_string_pretty(&self, ron::ser::PrettyConfig::default())
             .context(EncodeManifestSnafu)?;
-        write("voyager/config.ron", string).context(WriteManifestSnafu)?;
+        write(CONFIG_PATH, string).context(WriteManifestSnafu)?;
         Ok(())
     }
 
