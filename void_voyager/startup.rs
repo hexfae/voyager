@@ -1,5 +1,3 @@
-use std::{fs::create_dir, net::SocketAddr, sync::Arc, time::Duration};
-
 use crate::{
     incantations::{adopt, amend, beacon, expunge, inscribe, probe, unveil},
     nexus::{Atlas, Manifest, Nexus},
@@ -8,13 +6,12 @@ use axum::{
     Router,
     routing::{get, post},
 };
-use miette::{Diagnostic, IntoDiagnostic, Result};
-use notify_debouncer_full::{
-    DebounceEventResult, Debouncer, NoCache, new_debouncer, notify::INotifyWatcher,
-};
+use miette::{Diagnostic, IntoDiagnostic};
+use notify_debouncer_full::{DebounceEventResult, NoCache, new_debouncer, notify::INotifyWatcher};
 use owo_colors::OwoColorize;
 use parking_lot::RwLock;
 use snafu::{ResultExt, Snafu};
+use std::{fs::create_dir, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::net::TcpListener;
 use tracing::{error, info, level_filters::LevelFilter, warn};
 use tracing_appender::non_blocking::WorkerGuard;
@@ -27,32 +24,10 @@ use tracing_subscriber::{
 
 const ADDRESS: &str = "0.0.0.0:3000";
 
-/// Creates all the directories needed for Void Voyager.
-///
-/// # Errors
-///
-/// Returns an error if any of the directories could not be created.
-pub fn create_void_voyager_directories() -> Result<()> {
-    try_create_directory("voyager")?;
-    try_create_directory("voyager/backups")?;
-    try_create_directory("voyager/logs")?;
-    Ok(())
-}
+type Debouncer = notify_debouncer_full::Debouncer<INotifyWatcher, NoCache>;
 
-/// Creates the specified directory if it does not exist.
-///
-/// # Errors
-///
-/// It returns an error if the directory could not be created.
-fn try_create_directory(path: impl AsRef<str> + Into<String> + Copy) -> Result<()> {
-    if let Err(why) = create_dir(path.as_ref()).context(DirectorySnafu { path: path.into() }) {
-        if why.source.kind() != std::io::ErrorKind::AlreadyExists {
-            error!("while creating directory!");
-            return Err(why.into());
-        }
-    }
-    Ok(())
-}
+/// Type alias for the handle that is used to reload the logging configuration.
+type ReloadHandle = Handle<Vec<Box<dyn Layer<Registry> + Send + Sync>>, Registry>;
 
 #[derive(Debug, Snafu, Diagnostic)]
 #[snafu(display("Failed to create directory {}", path.cyan()))]
@@ -60,106 +35,29 @@ fn try_create_directory(path: impl AsRef<str> + Into<String> + Copy) -> Result<(
     code(void_voyager::main::create_void_voyager_directories),
     help("Is the directory writable?")
 )]
-struct DirectoryError {
+pub struct DirectoryError {
     path: String,
     source: std::io::Error,
 }
 
-fn event_handler(res: DebounceEventResult, manifest: Arc<RwLock<Manifest>>) {
-    match res {
-        Err(errors) => {
-            for why in errors {
-                warn!("while watching config file! {why}");
-            }
-        }
-        Ok(events) => {
-            for event in events {
-                // certain text editors (e.g. helix) will "modify" a file by creating a temporary
-                // file, deleting the original, and then moving (?) the new file over where the
-                // original was. i'm sure some other text editors just modify the old file in place
-                if (event.kind.is_modify() || event.kind.is_create())
-                    && event.paths.iter().any(|path| path.ends_with("config.ron"))
-                {
-                    if let Err(why) = manifest.write().reload().into_diagnostic() {
-                        warn!("Error reloading config!");
-                        println!("{why:?}");
-                    } else {
-                        info!("Reloaded config!");
-                    }
-                }
-            }
-        }
-    }
-}
-
 #[derive(Debug, Snafu, Diagnostic)]
 pub enum ConfigWatchError {
-    #[snafu(display("Failed to create config debouncer"))]
-    #[diagnostic(
-        code(void_voyager::main::watch_config),
-        help("You're on your own for this one.")
-    )]
-    DebounceError {
-        source: notify_debouncer_full::notify::Error,
-    },
     #[snafu(display("Failed to watch config file"))]
     #[diagnostic(
-        code(void_voyager::main::watch_config),
+        code(void_voyager::startup::WatchVoyagerConfig::watch_voyager_config),
         help("You're on your own for this one.")
     )]
     WatchError {
         source: notify_debouncer_full::notify::Error,
     },
-}
-
-pub trait WatchVoyagerConfig {
-    fn watch_voyager_config(&mut self) -> Result<(), ConfigWatchError>;
-}
-
-impl WatchVoyagerConfig for Debouncer<INotifyWatcher, NoCache> {
-    fn watch_voyager_config(&mut self) -> Result<(), ConfigWatchError> {
-        self.watch(
-            "voyager",
-            notify_debouncer_full::notify::RecursiveMode::NonRecursive,
-        )
-        .context(WatchSnafu)
-    }
-}
-
-pub fn watch_config(
-    manifest: Arc<RwLock<Manifest>>,
-) -> Result<Debouncer<INotifyWatcher, NoCache>, ConfigWatchError> {
-    new_debouncer(Duration::from_secs(1), None, move |res| {
-        event_handler(res, manifest.clone())
-    })
-    .context(DebounceSnafu)
-}
-
-pub async fn backup_levels_daily(atlas: Arc<Atlas>) {
-    let one_day = Duration::from_secs(60 * 60 * 24);
-    let mut interval = tokio::time::interval(one_day);
-    loop {
-        interval.tick().await;
-        atlas.backup();
-    }
-}
-
-pub async fn serve_voyager(nexus: Nexus) -> miette::Result<()> {
-    let app = Router::new()
-        .route(
-            "/voyager",
-            get(unveil).post(inscribe).put(amend).delete(expunge),
-        )
-        .route("/voyager/version", get(beacon))
-        .route("/voyager/orphanage", post(adopt))
-        .route("/voyager/{keys}", get(probe))
-        .with_state(nexus)
-        .into_make_service_with_connect_info::<SocketAddr>();
-    let listener = TcpListener::bind(ADDRESS)
-        .await
-        .context(BindSnafu { address: ADDRESS })?;
-    axum::serve(listener, app).await.context(ServeSnafu)?;
-    Ok(())
+    #[snafu(display("Failed to create config debouncer"))]
+    #[diagnostic(
+        code(void_voyager::startup::create_debouncer),
+        help("You're on your own for this one.")
+    )]
+    DebounceError {
+        source: notify_debouncer_full::notify::Error,
+    },
 }
 
 #[derive(Debug, Snafu, Diagnostic)]
@@ -180,10 +78,6 @@ enum AxumError {
     )]
     Serve { source: std::io::Error },
 }
-
-/// Type alias for the handle that is used to reload the logging configuration.
-#[allow(clippy::type_complexity)]
-pub type ReloadHandle = Handle<Vec<Box<dyn Layer<Registry> + Send + Sync>>, Registry>;
 
 /// Starts logging to stdout.
 ///
@@ -223,6 +117,107 @@ pub fn file_log(reload_handle: &ReloadHandle) -> WorkerGuard {
     });
     if let Err(why) = begin_logging_to_file {
         warn!("Could not begin logging to file! {why}");
-    };
+    }
     guard
+}
+
+/// Creates all the directories needed for Void Voyager.
+///
+/// # Errors
+///
+/// Returns an error if any of the directories could not be created.
+pub fn create_void_voyager_directories() -> Result<(), DirectoryError> {
+    try_create_directory("voyager")?;
+    try_create_directory("voyager/backups")?;
+    try_create_directory("voyager/logs")?;
+    Ok(())
+}
+
+/// Creates the specified directory if it does not exist.
+///
+/// # Errors
+///
+/// It returns an error if the directory could not be created.
+fn try_create_directory(path: impl AsRef<str> + Into<String> + Copy) -> Result<(), DirectoryError> {
+    if let Err(why) = create_dir(path.as_ref()).context(DirectorySnafu { path: path.into() }) {
+        if why.source.kind() != std::io::ErrorKind::AlreadyExists {
+            error!("while creating directory!");
+            return Err(why);
+        }
+    }
+    Ok(())
+}
+
+pub fn create_debouncer(manifest: Arc<RwLock<Manifest>>) -> Result<Debouncer, ConfigWatchError> {
+    new_debouncer(Duration::from_secs(1), None, move |res| {
+        event_handler(res, &manifest);
+    })
+    .context(DebounceSnafu)
+}
+
+fn event_handler(res: DebounceEventResult, manifest: &Arc<RwLock<Manifest>>) {
+    match res {
+        Err(errors) => {
+            for why in errors {
+                warn!("while watching config file! {why}");
+            }
+        }
+        Ok(events) => {
+            for event in events {
+                // certain text editors (e.g. helix) will "modify" a file by creating a temporary
+                // file, deleting the original, and then moving (?) the new file over where the
+                // original was. i'm sure some other text editors just modify the old file in place
+                if (event.kind.is_modify() || event.kind.is_create())
+                    && event.paths.iter().any(|path| path.ends_with("config.ron"))
+                {
+                    let result = manifest.write().reload().into_diagnostic();
+                    match result {
+                        Ok(()) => info!("Reloaded config!"),
+                        Err(why) => warn!("Error reloading config!\n{why:?}"),
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub trait WatchVoyagerConfig {
+    fn watch_voyager_config(&mut self) -> Result<(), ConfigWatchError>;
+}
+
+impl WatchVoyagerConfig for Debouncer {
+    fn watch_voyager_config(&mut self) -> Result<(), ConfigWatchError> {
+        self.watch(
+            "voyager",
+            notify_debouncer_full::notify::RecursiveMode::NonRecursive,
+        )
+        .context(WatchSnafu)
+    }
+}
+
+pub async fn backup_levels_daily(atlas: Arc<Atlas>) {
+    let one_day = Duration::from_secs(60 * 60 * 24);
+    let mut interval = tokio::time::interval(one_day);
+    loop {
+        interval.tick().await;
+        atlas.backup();
+    }
+}
+
+pub async fn serve_voyager(nexus: Nexus) -> miette::Result<()> {
+    let app = Router::new()
+        .route(
+            "/voyager",
+            get(unveil).post(inscribe).put(amend).delete(expunge),
+        )
+        .route("/voyager/version", get(beacon))
+        .route("/voyager/orphanage", post(adopt))
+        .route("/voyager/{keys}", get(probe))
+        .with_state(nexus)
+        .into_make_service_with_connect_info::<SocketAddr>();
+    let listener = TcpListener::bind(ADDRESS)
+        .await
+        .context(BindSnafu { address: ADDRESS })?;
+    axum::serve(listener, app).await.context(ServeSnafu)?;
+    Ok(())
 }

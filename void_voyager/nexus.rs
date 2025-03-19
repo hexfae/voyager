@@ -18,7 +18,6 @@ use void_codex::{Sector, Sigil};
 
 const CONFIG_PATH: &str = "voyager/config.ron";
 
-// maybe AstralIndex
 #[derive(Debug, Clone)]
 pub struct Nexus {
     pub atlas: Arc<Atlas>,
@@ -91,22 +90,8 @@ pub enum NexusError {
     Manifest { source: ManifestError },
 }
 
-impl Nexus {
-    pub fn try_load() -> Result<Self, NexusError> {
-        Ok(Self {
-            atlas: Arc::new(Atlas::try_load()?),
-            manifest: Arc::new(RwLock::new(Manifest::try_load()?)),
-        })
-    }
-
-    pub fn try_save(&self) -> Result<(), NexusError> {
-        self.atlas.try_save()?;
-        self.manifest.read().try_save()?;
-        Ok(())
-    }
-}
-
 #[derive(Debug, Snafu, Diagnostic)]
+#[allow(clippy::enum_variant_names)] // due to clashing names with ManifestError
 pub enum AtlasError {
     #[snafu(display("Failed to open the levels file"))]
     #[diagnostic(
@@ -134,6 +119,35 @@ pub enum AtlasError {
     WriteAtlas { source: std::io::Error },
 }
 
+#[derive(Debug, Snafu, Diagnostic)]
+#[allow(clippy::enum_variant_names)] // due to clashing names with AtlasError
+pub enum ManifestError {
+    #[snafu(display("Failed to open the config file"))]
+    #[diagnostic(
+        code(void_voyager::nexus::ManifestError::ReadManifest),
+        help("Do you have read permissions for the file?")
+    )]
+    ReadManifest { source: std::io::Error },
+    #[snafu(display("Failed to deserialize the opened config"))]
+    #[diagnostic(
+        code(void_voyager::nexus::ManifestError::DecodeManifest),
+        help("Did you forget a parenthesis?")
+    )]
+    DecodeManifest { source: ron::de::SpannedError },
+    #[snafu(display("Failed to serialize the config"))]
+    #[diagnostic(
+        code(void_voyager::nexus::ManifestError::EncodeManifest),
+        help("You're on your own for this one.")
+    )]
+    EncodeManifest { source: ron::error::Error },
+    #[snafu(display("Failed to write the config file"))]
+    #[diagnostic(
+        code(void_voyager::nexus::ManifestError::WriteManifest),
+        help("Do you have write permissions for the file?")
+    )]
+    WriteManifest { source: std::io::Error },
+}
+
 fn try_open_file_bytes(path: impl AsRef<str>) -> Result<Option<Vec<u8>>, std::io::Error> {
     match read(path.as_ref()) {
         Ok(bytes) => Ok(Some(bytes)),
@@ -157,6 +171,21 @@ fn try_open_file_string(path: impl AsRef<str>) -> Result<Option<String>, std::io
                 Err(why)
             }
         }
+    }
+}
+
+impl Nexus {
+    pub fn try_load() -> Result<Self, NexusError> {
+        Ok(Self {
+            atlas: Arc::new(Atlas::try_load()?),
+            manifest: Arc::new(RwLock::new(Manifest::try_load()?)),
+        })
+    }
+
+    pub fn try_save(&self) -> Result<(), NexusError> {
+        self.atlas.try_save()?;
+        self.manifest.read().try_save()?;
+        Ok(())
     }
 }
 
@@ -311,34 +340,6 @@ impl Atlas {
     }
 }
 
-#[derive(Debug, Snafu, Diagnostic)]
-pub enum ManifestError {
-    #[snafu(display("Failed to open the config file"))]
-    #[diagnostic(
-        code(void_voyager::nexus::ManifestError::ReadManifest),
-        help("Do you have read permissions for the file?")
-    )]
-    ReadManifest { source: std::io::Error },
-    #[snafu(display("Failed to deserialize the opened config"))]
-    #[diagnostic(
-        code(void_voyager::nexus::ManifestError::DecodeManifest),
-        help("Did you forget a parenthesis?")
-    )]
-    DecodeManifest { source: ron::de::SpannedError },
-    #[snafu(display("Failed to serialize the config"))]
-    #[diagnostic(
-        code(void_voyager::nexus::ManifestError::EncodeManifest),
-        help("You're on your own for this one.")
-    )]
-    EncodeManifest { source: ron::error::Error },
-    #[snafu(display("Failed to write the config file"))]
-    #[diagnostic(
-        code(void_voyager::nexus::ManifestError::WriteManifest),
-        help("Do you have write permissions for the file?")
-    )]
-    WriteManifest { source: std::io::Error },
-}
-
 impl Manifest {
     pub fn try_load() -> Result<Self, ManifestError> {
         let string = try_open_file_string(CONFIG_PATH).context(ReadManifestSnafu)?;
@@ -356,7 +357,7 @@ impl Manifest {
     }
 
     pub fn reload(&mut self) -> Result<(), ManifestError> {
-        let new = Manifest::try_load()?;
+        let new = Self::try_load()?;
         *self = new;
         Ok(())
     }

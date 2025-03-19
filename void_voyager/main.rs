@@ -18,11 +18,10 @@ async fn main() -> miette::Result<()> {
     nexus.try_save()?;
     // TODO: webui
     // watch the config file for edits to hot reload
-    let mut debouncer = startup::watch_config(nexus.manifest.clone())?;
+    let mut debouncer = startup::create_debouncer(nexus.manifest.clone())?;
     startup::WatchVoyagerConfig::watch_voyager_config(&mut debouncer)?;
     // backup levels daily
     tokio::spawn(startup::backup_levels_daily(nexus.atlas.clone()));
     // serve voyager
-    startup::serve_voyager(nexus).await?;
-    Ok(())
+    startup::serve_voyager(nexus).await
 }
