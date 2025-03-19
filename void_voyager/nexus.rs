@@ -187,6 +187,11 @@ impl Nexus {
         self.manifest.read().try_save()?;
         Ok(())
     }
+
+    pub fn vaporize(&self, origin: IpAddr) {
+        self.atlas.vaporize(origin);
+        self.manifest.read().vaporize(origin);
+    }
 }
 
 impl Atlas {
@@ -338,6 +343,22 @@ impl Atlas {
         info!("{} by {}", sector.name(), sector.author());
         StatusCode::NO_CONTENT.into_response()
     }
+
+    pub fn vaporize(&self, origin: IpAddr) {
+        self.sectors
+            .iter()
+            .filter(|element| element.origin() == origin)
+            .for_each(|sector| {
+                self.expunge(sector.sigil());
+            });
+    }
+
+    pub fn sectors(&self) -> Vec<Sector> {
+        self.sectors
+            .iter()
+            .map(|sector| sector.value().clone())
+            .collect()
+    }
 }
 
 impl Manifest {
@@ -360,6 +381,11 @@ impl Manifest {
         let new = Self::try_load()?;
         *self = new;
         Ok(())
+    }
+
+    pub fn vaporize(&self, origin: IpAddr) {
+        self.banned_origins.0.insert(origin);
+        self.try_save().ok();
     }
 
     pub fn origin_is_banned(&self, origin: IpAddr) -> bool {

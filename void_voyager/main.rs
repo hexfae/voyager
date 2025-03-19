@@ -3,6 +3,7 @@
 mod incantations;
 mod nexus;
 mod startup;
+mod webui;
 
 #[tokio::main]
 async fn main() -> miette::Result<()> {
@@ -16,12 +17,13 @@ async fn main() -> miette::Result<()> {
     let nexus = nexus::Nexus::try_load()?;
     // save to update the config file
     nexus.try_save()?;
-    // TODO: webui
+    // load the webui backend
+    let backend = webui::backend::Backend::try_load()?;
     // watch the config file for edits to hot reload
     let mut debouncer = startup::create_debouncer(nexus.manifest.clone())?;
     startup::WatchVoyagerConfig::watch_voyager_config(&mut debouncer)?;
     // backup levels daily
     tokio::spawn(startup::backup_levels_daily(nexus.atlas.clone()));
     // serve voyager
-    startup::serve_voyager(nexus).await
+    startup::serve_voyager(nexus, backend).await
 }

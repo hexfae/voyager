@@ -1,10 +1,15 @@
 use crate::{
     incantations::{adopt, amend, beacon, expunge, inscribe, probe, unveil},
     nexus::{Atlas, Manifest, Nexus},
+    webui::{self, backend::Backend},
 };
 use axum::{
     Router,
     routing::{get, post},
+};
+use axum_login::{
+    AuthManagerLayerBuilder, login_required,
+    tower_sessions::{MemoryStore, SessionManagerLayer},
 };
 use miette::{Diagnostic, IntoDiagnostic};
 use notify_debouncer_full::{DebounceEventResult, NoCache, new_debouncer, notify::INotifyWatcher};
@@ -204,8 +209,24 @@ pub async fn backup_levels_daily(atlas: Arc<Atlas>) {
     }
 }
 
-pub async fn serve_voyager(nexus: Nexus) -> miette::Result<()> {
+pub async fn serve_voyager(nexus: Nexus, backend: Backend) -> miette::Result<()> {
+    let session_store = MemoryStore::default();
+    let session_layer = SessionManagerLayer::new(session_store).with_secure(false);
+    let auth_layer = AuthManagerLayerBuilder::new(backend, session_layer).build();
+
     let app = Router::new()
+        .route("/voyager/webui", get(webui::index::index))
+        .route_layer(login_required!(Backend, login_url = "/voyager/webui/login"))
+        .route("/voyager/webui/levels", get(webui::index::levels))
+        .route_layer(login_required!(Backend, login_url = "/voyager/webui/login"))
+        .route("/voyager/webui/delete/{key}", post(webui::index::delete))
+        .route_layer(login_required!(Backend, login_url = "/voyager/webui/login"))
+        .route("/voyager/webui/ban/{ip}", post(webui::index::ban))
+        .route_layer(login_required!(Backend, login_url = "/voyager/webui/login"))
+        .route(
+            "/voyager/webui/login",
+            get(webui::login::get).post(webui::login::post),
+        )
         .route(
             "/voyager",
             get(unveil).post(inscribe).put(amend).delete(expunge),
@@ -214,6 +235,7 @@ pub async fn serve_voyager(nexus: Nexus) -> miette::Result<()> {
         .route("/voyager/orphanage", post(adopt))
         .route("/voyager/{keys}", get(probe))
         .with_state(nexus)
+        .layer(auth_layer)
         .into_make_service_with_connect_info::<SocketAddr>();
     let listener = TcpListener::bind(ADDRESS)
         .await

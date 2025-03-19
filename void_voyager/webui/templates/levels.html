@@ -1,0 +1,30 @@
+<tbody>
+    {% for level in levels %}
+    <tr>
+        <td>{{ level.version() }}</td>
+        <td>{{ level.name() }}</td>
+        <td>{{ level.description() }}</td>
+        <td>{{ level.music() }}</td>
+        <td>{{ level.author() }}</td>
+        <td><img title="{{ level.brand() }}" src="data:image/png;base64,{{ level.brand_image() }}"></td>
+        <td>{{ level.uploaded() }}</td>
+        <td>{{ level.edited() }}</td>
+        <td>{{ level.burdens() }}</td>
+        <td><span class="sensitive">{{ level.sigil() }}</span></td>
+        <td><span class="sensitive">{{ level.origin() }}</span></td>
+        <td>
+            <button hx-post="/voyager/webui/delete/{{ level.sigil() }}" hx-swap="delete swap:0.5s"
+                hx-target="closest tr" hx-confirm="really?">
+                delete
+            </button>
+        </td>
+        <td>
+            <button hx-post="/voyager/webui/ban/{{ level.origin() }}" hx-swap="outerHTML" hx-target="closest tbody"
+                hx-confirm="really?">
+                Ban This Kid
+            </button>
+        </td>
+    </tr>
+
+    {% endfor %}
+</tbody>

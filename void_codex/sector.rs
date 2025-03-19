@@ -600,13 +600,58 @@ impl Sector {
     }
 
     #[must_use]
+    pub fn version(&self) -> String {
+        self.compendium.version.to_string()
+    }
+
+    #[must_use]
     pub fn name(&self) -> String {
         self.compendium.name.to_string()
     }
 
     #[must_use]
+    pub fn description(&self) -> String {
+        self.compendium.description.to_string()
+    }
+
+    #[must_use]
+    pub fn music(&self) -> String {
+        self.compendium.music.to_string()
+    }
+
+    #[must_use]
     pub fn author(&self) -> String {
         self.compendium.author.to_string()
+    }
+
+    #[must_use]
+    pub fn brand(&self) -> String {
+        self.compendium.brand.to_string()
+    }
+
+    #[must_use]
+    pub fn brand_image(&self) -> String {
+        self.compendium.brand_image.to_string()
+    }
+
+    #[must_use]
+    pub fn uploaded(&self) -> String {
+        self.compendium.uploaded.to_string()
+    }
+
+    #[must_use]
+    pub fn edited(&self) -> String {
+        self.compendium.edited.to_string()
+    }
+
+    #[must_use]
+    pub fn burdens(&self) -> String {
+        self.compendium.burdens.to_string()
+    }
+
+    #[must_use]
+    pub fn parsed_burdens(&self) -> ParsedBurdens {
+        self.compendium.parsed_burdens.clone()
     }
 
     #[must_use]
@@ -617,6 +662,11 @@ impl Sector {
     #[must_use]
     pub fn cipher(&self) -> String {
         self.cipher.to_string()
+    }
+
+    #[must_use]
+    pub const fn origin(&self) -> IpAddr {
+        self.origin
     }
 }
 

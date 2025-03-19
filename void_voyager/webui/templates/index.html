@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Void Voyager</title>
+    <script src="https://unpkg.com/htmx.org@1.9.12"
+        integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2"
+        crossorigin="anonymous"></script>
+    <style>
+        *:where(:not(html, iframe, canvas, img, svg, video, audio):not(svg *, symbol *)) {
+            all: unset;
+            display: revert;
+        }
+
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+        }
+
+        html {
+            -moz-text-size-adjust: none;
+            -webkit-text-size-adjust: none;
+            text-size-adjust: none;
+        }
+
+        a,
+        button {
+            cursor: revert;
+        }
+
+        ol,
+        ul,
+        menu,
+        summary {
+            list-style: none;
+        }
+
+        img {
+            max-inline-size: 100%;
+            max-block-size: 100%;
+        }
+
+        table {
+            border-collapse: collapse;
+        }
+
+        input,
+        textarea {
+            -webkit-user-select: auto;
+        }
+
+        textarea {
+            white-space: revert;
+        }
+
+        meter {
+            -webkit-appearance: revert;
+            appearance: revert;
+        }
+
+        :where(pre) {
+            all: revert;
+            box-sizing: border-box;
+        }
+
+        ::placeholder {
+            color: unset;
+        }
+
+        display:revert;
+
+        revert to element instead of attribute */:where([hidden]) {
+            display: none;
+        }
+
+        :where([contenteditable]:not([contenteditable="false"])) {
+            -moz-user-modify: read-write;
+            -webkit-user-modify: read-write;
+            overflow-wrap: break-word;
+            -webkit-line-break: after-white-space;
+            -webkit-user-select: auto;
+        }
+
+        :where([draggable="true"]) {
+            -webkit-user-drag: element;
+        }
+
+        :where(dialog:modal) {
+            all: revert;
+            box-sizing: border-box;
+        }
+
+        ::-webkit-details-marker {
+            display: none;
+        }
+
+        html {
+            background-color: #121212;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            color: #e0e0e0;
+        }
+
+        table {
+            display: block;
+            padding: 1rem;
+            margin: 1rem;
+            background-color: #1d1d1d;
+            border-radius: 1.5rem;
+            box-shadow: #0000007f 0 0.5rem 1rem;
+        }
+
+        tr:nth-of-type(even) {
+            background-color: #262626;
+        }
+
+        th {
+            text-align: center;
+        }
+
+
+        td {
+            border-top: 1px #6c6c6c solid;
+        }
+
+        td>img {
+            image-rendering: pixelated;
+            width: 100%;
+        }
+
+        th,
+        td {
+            padding: 0.25rem 0.5rem;
+        }
+
+        td:not(:first-child) {
+            border-left: 1px #6c6c6c solid;
+        }
+
+        .sensitive {
+            background-color: #121212;
+            color: transparent;
+            transition: color 0.25s;
+            padding: 0.25rem;
+        }
+
+        .sensitive:hover {
+            color: #e0e0e0;
+        }
+
+        button {
+            width: max-content;
+            cursor: pointer;
+            background-color: #212121;
+            border: #6c6c6c 1px solid;
+            padding: 0.5rem 1rem;
+            border-radius: 2rem;
+            transition: background-color 0.25s;
+        }
+
+        input:focus,
+        input:hover {
+            background-color: #262626;
+        }
+
+        tr.htmx-swapping td {
+            transition: opacity 0.5s ease-in-out;
+            opacity: 0;
+        }
+    </style>
+</head>
+
+<body>
+    <table>
+        <thead>
+            <tr>
+                <th title="version">v.</th>
+                <th>name</th>
+                <th>description</th>
+                <th>music</th>
+                <th>author</th>
+                <th>brand</th>
+                <th>uploaded</th>
+                <th>edited</th>
+                <th title="burdens">b.</th>
+                <th>key</th>
+                <th>ip</th>
+                <th>delete</th>
+                <th>ip ban</th>
+            </tr>
+        </thead>
+        <tbody style="width: 100%;" hx-get="/voyager/webui/levels" hx-trigger="load" hx-swap="outerHTML">
+            <td>loading…</td>
+            <td>loading…</td>
+            <td>loading…</td>
+            <td>loading…</td>
+            <td>loading…</td>
+            <td>loading…</td>
+            <td>loading…</td>
+            <td>loading…</td>
+            <td>loading…</td>
+            <td>loading…</td>
+            <td>loading…</td>
+            <td>loading…</td>
+            <td>loading…</td>
+            </tobdy>
+    </table>
+</body>
