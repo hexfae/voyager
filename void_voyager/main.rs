@@ -1,5 +1,6 @@
 //! Voyage the Void.
 
+mod alert;
 mod incantations;
 mod nexus;
 mod startup;

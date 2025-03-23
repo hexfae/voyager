@@ -12,7 +12,9 @@ use axum_login::{
     tower_sessions::{MemoryStore, SessionManagerLayer},
 };
 use miette::{Diagnostic, IntoDiagnostic};
-use notify_debouncer_full::{DebounceEventResult, NoCache, new_debouncer, notify::INotifyWatcher};
+use notify_debouncer_full::{
+    DebounceEventResult, DebouncedEvent, NoCache, new_debouncer, notify::INotifyWatcher,
+};
 use owo_colors::OwoColorize;
 use parking_lot::RwLock;
 use snafu::{ResultExt, Snafu};
@@ -167,20 +169,22 @@ fn event_handler(res: DebounceEventResult, manifest: &Arc<RwLock<Manifest>>) {
                 warn!("while watching config file! {why}");
             }
         }
-        Ok(events) => {
-            for event in events {
-                // certain text editors (e.g. helix) will "modify" a file by creating a temporary
-                // file, deleting the original, and then moving (?) the new file over where the
-                // original was. i'm sure some other text editors just modify the old file in place
-                if (event.kind.is_modify() || event.kind.is_create())
-                    && event.paths.iter().any(|path| path.ends_with("config.ron"))
-                {
-                    let result = manifest.write().reload().into_diagnostic();
-                    match result {
-                        Ok(()) => info!("Reloaded config!"),
-                        Err(why) => warn!("Error reloading config!\n{why:?}"),
-                    }
-                }
+        Ok(events) => handle_events(events, manifest),
+    }
+}
+
+fn handle_events(events: Vec<DebouncedEvent>, manifest: &Arc<RwLock<Manifest>>) {
+    for event in events {
+        // certain text editors (e.g. helix) will "modify" a file by creating a temporary
+        // file, deleting the original, and then moving (?) the new file over where the
+        // original was. i'm sure some other text editors just modify the old file in place
+        if (event.kind.is_modify() || event.kind.is_create())
+            && event.paths.iter().any(|path| path.ends_with("config.ron"))
+        {
+            let result = manifest.write().reload().into_diagnostic();
+            match result {
+                Ok(()) => info!("Reloaded config!"),
+                Err(why) => warn!("Error reloading config!\n{why:?}"),
             }
         }
     }

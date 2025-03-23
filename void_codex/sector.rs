@@ -630,8 +630,13 @@ impl Sector {
     }
 
     #[must_use]
-    pub fn brand_image(&self) -> String {
-        self.compendium.brand_image.to_string()
+    pub fn brand_image_base64(&self) -> String {
+        self.compendium.brand_image.base64.clone()
+    }
+
+    #[must_use]
+    pub fn brand_image_bytes(&self) -> Vec<u8> {
+        self.compendium.brand_image.bytes.clone()
     }
 
     #[must_use]

@@ -1,11 +1,11 @@
-use crate::nexus::Nexus;
+use crate::{alert::send_discord_message, nexus::Nexus};
 use axum::{
     extract::{ConnectInfo, Path, State},
     http::StatusCode,
     response::{IntoResponse, Response},
 };
 use std::net::SocketAddr;
-use tracing::{info, instrument};
+use tracing::{info, instrument, warn};
 
 #[instrument(
     name = "request",
@@ -28,7 +28,8 @@ pub async fn beacon(
     State(nexus): State<Nexus>,
     ConnectInfo(origin): ConnectInfo<SocketAddr>,
 ) -> Response {
-    nexus.manifest.read().latest_endless_void_version_response()
+    let latest_endless_void_version = nexus.manifest.read().latest_endless_void_version();
+    (StatusCode::OK, latest_endless_void_version).into_response()
 }
 
 #[instrument(
@@ -76,7 +77,18 @@ pub async fn adopt(
     ConnectInfo(origin): ConnectInfo<SocketAddr>,
     sigil: String,
 ) -> Response {
-    nexus.atlas.adopt(sigil)
+    match nexus.atlas.adopt(&sigil) {
+        Err(response) => *response,
+        Ok(response) => {
+            match nexus.atlas.sector(&sigil) {
+                None => warn!("could not send discord webhook because level not found!"),
+                Some(sector) => {
+                    send_discord_message(nexus.manifest.read().discord_webhook_urls(), &sector);
+                }
+            }
+            response
+        }
+    }
 }
 
 #[instrument(

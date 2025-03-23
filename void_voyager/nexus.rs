@@ -289,16 +289,16 @@ impl Atlas {
         (StatusCode::CREATED, sigil).into_response()
     }
 
-    pub fn adopt(&self, sigil: impl Into<String>) -> Response {
+    pub fn adopt(&self, sigil: impl Into<String>) -> Result<Response, Box<Response>> {
         let Ok(sigil) = sigil.into().parse::<Sigil>() else {
-            return StatusCode::BAD_REQUEST.into_response();
+            return Err(Box::new(StatusCode::BAD_REQUEST.into_response()));
         };
         let Some((_, sector)) = self.orphans.remove(&sigil) else {
-            return StatusCode::NOT_FOUND.into_response();
+            return Err(Box::new(StatusCode::NOT_FOUND.into_response()));
         };
         info!("{} by {} adopted", sector.name(), sector.author());
         self.sectors.insert(sigil, sector);
-        StatusCode::NO_CONTENT.into_response()
+        Ok(StatusCode::NO_CONTENT.into_response())
     }
 
     pub fn amend(
@@ -353,6 +353,15 @@ impl Atlas {
             });
     }
 
+    pub fn sector(&self, sigil: impl AsRef<str>) -> Option<Sector> {
+        let Ok(sigil) = sigil.as_ref().parse::<Sigil>() else {
+            return None;
+        };
+        self.sectors
+            .get(&sigil)
+            .map(|sector| sector.value().clone())
+    }
+
     pub fn sectors(&self) -> Vec<Sector> {
         self.sectors
             .iter()
@@ -393,28 +402,22 @@ impl Manifest {
     }
 
     #[allow(clippy::missing_const_for_fn)]
-    pub fn allowed_songs(&self) -> &[String] {
-        &self.allowed_songs.0
+    pub fn allowed_songs(&self) -> Vec<String> {
+        self.allowed_songs.0.clone()
     }
 
     pub const fn latest_format_version(&self) -> u8 {
         self.latest_format_version.0
     }
 
-    pub fn latest_endless_void_version_response(&self) -> Response {
-        let latest_endless_void_version = self.latest_endless_void_version.0.clone();
-        info!("{latest_endless_void_version}");
-        (StatusCode::OK, latest_endless_void_version).into_response()
+    #[allow(clippy::missing_const_for_fn)]
+    pub fn latest_endless_void_version(&self) -> String {
+        self.latest_endless_void_version.0.clone()
     }
 
     #[allow(clippy::missing_const_for_fn)]
-    pub fn latest_endless_void_version(&self) -> &str {
-        &self.latest_endless_void_version.0
-    }
-
-    #[allow(clippy::missing_const_for_fn)]
-    pub fn discord_webhook_urls(&self) -> &[String] {
-        &self.discord_webhook_urls.0
+    pub fn discord_webhook_urls(&self) -> Vec<String> {
+        self.discord_webhook_urls.0.clone()
     }
 }
 
