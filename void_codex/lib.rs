@@ -8,8 +8,8 @@ mod sector;
 
 pub use sector::Author;
 pub use sector::BRAND_36_BITS;
-pub use sector::BRANEFUCK_CHARACTERS;
-pub use sector::BURDENS_4_BITS;
+pub use sector::ADDITIONAL_BRANEFUCK_CHARACTERS;
+pub use sector::BURDENS_5_BITS;
 pub use sector::Brand;
 pub use sector::BrandImage;
 pub use sector::BranefuckProgram;
@@ -18,7 +18,6 @@ pub use sector::Cipher;
 pub use sector::Description;
 pub use sector::Direction;
 pub use sector::Edited;
-pub use sector::InputValue;
 pub use sector::MAX_AUTHOR_LEN;
 pub use sector::MAX_DESCRIPTION_LEN;
 pub use sector::MAX_NAME_LEN;

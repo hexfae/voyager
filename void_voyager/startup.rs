@@ -29,8 +29,6 @@ use tracing_subscriber::{
     util::SubscriberInitExt,
 };
 
-const ADDRESS: &str = "0.0.0.0:3000";
-
 type Debouncer = notify_debouncer_full::Debouncer<INotifyWatcher, NoCache>;
 
 /// Type alias for the handle that is used to reload the logging configuration.
@@ -218,6 +216,8 @@ pub async fn serve_voyager(nexus: Nexus, backend: Backend) -> miette::Result<()>
     let session_layer = SessionManagerLayer::new(session_store).with_secure(false);
     let auth_layer = AuthManagerLayerBuilder::new(backend, session_layer).build();
 
+    let port = nexus.manifest.read().port();
+    let address = format!("0.0.0.0:{}", port);
     let app = Router::new()
         .route("/voyager/webui", get(webui::index::index))
         .route_layer(login_required!(Backend, login_url = "/voyager/webui/login"))
@@ -241,9 +241,12 @@ pub async fn serve_voyager(nexus: Nexus, backend: Backend) -> miette::Result<()>
         .with_state(nexus)
         .layer(auth_layer)
         .into_make_service_with_connect_info::<SocketAddr>();
-    let listener = TcpListener::bind(ADDRESS)
+
+    
+    let listener = TcpListener::bind(address.clone())
         .await
-        .context(BindSnafu { address: ADDRESS })?;
+        .context(BindSnafu { address: address.clone() })?;
     axum::serve(listener, app).await.context(ServeSnafu)?;
+    info!("Serving voyager at port {port}");
     Ok(())
 }

@@ -33,6 +33,8 @@ pub struct Atlas {
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Manifest {
     #[serde(default)]
+    port: Port,
+    #[serde(default)]
     allowed_songs: AllowedSongs,
     #[serde(default)]
     latest_format_version: LatestFormatVersion,
@@ -44,6 +46,12 @@ pub struct Manifest {
     #[serde(rename = "banned_ips")]
     banned_origins: BannedOrigins,
 }
+
+
+/// The port voyager binds to.
+///
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Port(pub u16);
 
 /// The list of allowed songs.
 ///
@@ -176,14 +184,16 @@ fn try_open_file_string(path: impl AsRef<str>) -> Result<Option<String>, std::io
 
 impl Nexus {
     pub fn try_load() -> Result<Self, NexusError> {
-        Ok(Self {
+        let new = Self {
             atlas: Arc::new(Atlas::try_load()?),
             manifest: Arc::new(RwLock::new(Manifest::try_load()?)),
-        })
+        };
+        info!("{} levels, {} orphans loaded", new.atlas.sectors.len(), new.atlas.orphans.len());
+        Ok(new)
     }
 
     pub fn try_save(&self) -> Result<(), NexusError> {
-        self.atlas.try_save()?;
+        self.atlas.try_save();
         self.manifest.read().try_save()?;
         Ok(())
     }
@@ -203,10 +213,18 @@ impl Atlas {
         }
     }
 
-    pub fn try_save(&self) -> Result<(), AtlasError> {
-        let bytes = bincode::serialize(&self).context(EncodeAtlasSnafu)?;
-        write("voyager/levels.db", bytes).context(WriteAtlasSnafu)?;
-        Ok(())
+    pub fn try_save(&self) {
+        let copy = self.clone();
+        std::thread::spawn(move || {
+            if let Err(why) = bincode::serialize(&copy)
+                .context(EncodeAtlasSnafu)
+                .and_then(|bytes| write("voyager/levels.db", bytes)
+                .context(WriteAtlasSnafu)) 
+            {
+                warn!("{why}");
+            }
+
+        });
     }
 
     pub fn backup(&self) {
@@ -237,7 +255,7 @@ impl Atlas {
         self.sectors.iter().any(|sector| {
             sector.name() == new.name()
                 && sector.author() == new.author()
-                && sector.sigil() != new.sigil()
+                && sector.sigil_string() != new.sigil_string()
         })
     }
 
@@ -283,14 +301,15 @@ impl Atlas {
         if self.name_and_author_collision_found(&sector) {
             return StatusCode::BAD_REQUEST.into_response();
         }
-        let sigil = Sigil::new();
+        let sigil = sector.sigil();
         info!("{} by {} up for adoption", sector.name(), sector.author());
         self.orphans.insert(sigil, sector);
         (StatusCode::CREATED, sigil).into_response()
     }
 
     pub fn adopt(&self, sigil: impl Into<String>) -> Result<Response, Box<Response>> {
-        let Ok(sigil) = sigil.into().parse::<Sigil>() else {
+        let sigil: String = sigil.into();
+        let Ok(sigil) = sigil.parse::<Sigil>() else {
             return Err(Box::new(StatusCode::BAD_REQUEST.into_response()));
         };
         let Some((_, sector)) = self.orphans.remove(&sigil) else {
@@ -298,6 +317,7 @@ impl Atlas {
         };
         info!("{} by {} adopted", sector.name(), sector.author());
         self.sectors.insert(sigil, sector);
+        self.try_save();
         Ok(StatusCode::NO_CONTENT.into_response())
     }
 
@@ -322,14 +342,15 @@ impl Atlas {
         if self.name_and_author_collision_found(&sector) {
             return StatusCode::BAD_REQUEST.into_response();
         }
-        let Some(old_sector) = self.sectors.get(&sigil) else {
+        let Some(old_entry) = self.sectors.remove(&sigil) else {
             return StatusCode::NOT_FOUND.into_response();
         };
-        if sector.set_uploaded_from(&old_sector).is_err() {
+        if sector.set_uploaded_from(&old_entry.1).is_err() {
             warn!("failed to set uploaded from old level");
         }
         info!("{} by {} edited", sector.name(), sector.author());
         self.sectors.insert(sigil, sector);
+        self.try_save();
         StatusCode::NO_CONTENT.into_response()
     }
 
@@ -340,7 +361,8 @@ impl Atlas {
         let Some((_, sector)) = self.sectors.remove(&sigil) else {
             return StatusCode::NOT_FOUND.into_response();
         };
-        info!("{} by {}", sector.name(), sector.author());
+        info!("{} by {} deleted", sector.name(), sector.author());
+        self.try_save();
         StatusCode::NO_CONTENT.into_response()
     }
 
@@ -349,8 +371,9 @@ impl Atlas {
             .iter()
             .filter(|element| element.origin() == origin)
             .for_each(|sector| {
-                self.expunge(sector.sigil());
+                self.expunge(sector.sigil_string());
             });
+        self.try_save();
     }
 
     pub fn sector(&self, sigil: impl AsRef<str>) -> Option<Sector> {
@@ -397,6 +420,10 @@ impl Manifest {
         self.try_save().ok();
     }
 
+    pub fn port(&self) -> u16 {
+        self.port.0
+    }
+
     pub fn origin_is_banned(&self, origin: IpAddr) -> bool {
         self.banned_origins.0.contains(&origin)
     }
@@ -422,7 +449,7 @@ impl Manifest {
 }
 
 impl AllowedSongs {
-    const DEFAULT_ALLOWED_SONGS: [&str; 18] = [
+    const DEFAULT_ALLOWED_SONGS: [&str; 19] = [
         "", // ambience
         "msc_001",
         "msc_dungeon_wings",
@@ -441,15 +468,27 @@ impl AllowedSongs {
         "msc_stg_extraboss",
         "msc_rytmi2",
         "msc_test2",
+        "snd_ev_music_judgment_jingle",
     ];
 }
 
+impl Port {
+    const DEFAULT_PORT: u16 = 3000;
+}
+
+
+impl Default for Port {
+    fn default() -> Self {
+        Self(Self::DEFAULT_PORT)
+    }
+}
+
 impl LatestFormatVersion {
-    const DEFAULT_LATEST_FORMAT_VERSION: u8 = 2;
+    const DEFAULT_LATEST_FORMAT_VERSION: u8 = 3;
 }
 
 impl LatestEndlessVoidVersion {
-    const DEFAULT_LATEST_ENDLESS_VOID_VERSION: &str = "0.89";
+    const DEFAULT_LATEST_ENDLESS_VOID_VERSION: &str = "0.99";
 }
 
 impl Default for AllowedSongs {

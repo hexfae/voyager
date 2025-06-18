@@ -10,10 +10,10 @@
         <td>{{ level.uploaded() }}</td>
         <td>{{ level.edited() }}</td>
         <td>{{ level.burdens() }}</td>
-        <td><span class="sensitive">{{ level.sigil() }}</span></td>
+        <td><span class="sensitive">{{ level.sigil_string() }}</span></td>
         <td><span class="sensitive">{{ level.origin() }}</span></td>
         <td>
-            <button hx-post="/voyager/webui/delete/{{ level.sigil() }}" hx-swap="delete swap:0.5s"
+            <button hx-post="/voyager/webui/delete/{{ level.sigil_string() }}" hx-swap="delete swap:0.5s"
                 hx-target="closest tr" hx-confirm="really?">
                 delete
             </button>
