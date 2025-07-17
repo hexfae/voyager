@@ -40,13 +40,12 @@ pub const BRAND_36_BITS: u64 = 0b1111_1111_1111_1111_1111_1111_1111_1111_1111;
 /// Additional, because all alphanumeric characters are allowed too.
 ///
 /// See [Endless Void's page on Branefuck](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck) for details.
-pub const ADDITIONAL_BRANEFUCK_CHARACTERS: &str = ".,+-[]><?^_#: ";
+pub const ADDITIONAL_BRANEFUCK_CHARACTERS: &str = ".,+-[]><?^_#:;\n ";
 
 /// A level's burdens' highest value.
 ///
 /// Equal to 2^5-1 or 32.
 pub const BURDENS_5_BITS: u8 = 0b11111;
-
 
 /// The max theme number.
 /// There's only two themes.
@@ -166,7 +165,6 @@ pub struct Theme(u8);
 
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Bount(i16);
-
 
 /// A tile, as represented by [Endless Void](https://github.com/Skirlez/void-stranger-endless-void).
 ///
@@ -363,51 +361,43 @@ pub enum ObjectType {
         direction: Direction,
     },
 
-
     /// An Add statue's parameters in either Simple or BRANEFUCK mode.
     /// It should be noted that, in simple mode, the branefuck program parameter would just
     /// be the name of a global variable or a number. Which isn't valid branefuck, but internally
     /// it's inserted into a premade branefuck program so it can be thought of as an excerpt (which means it can be validated the same way we validate branefuck)
-    /// 
+    ///
     /// All types of add statues since format version 3 use this.
     AddStatue {
-        mode : u8,
+        mode: u8,
         branefuck: BranefuckProgram,
         destroy_value: InputValue,
     },
 
     /// This object's horizontal and vertical [`Offset`]
-    /// 
+    ///
     /// The object will be moved horizontally and vertically by offset_x and offset_y.
-    /// 
+    ///
     /// Only one object currently uses this, that being [`ObjectId::MemoryCrystal``].
-    Offset {
-        offset_x : i8,
-        offset_y : i8,
-    },
+    Offset { offset_x: i8, offset_y: i8 },
 
     /// A secret exit's parameters.
-    /// 
+    ///
     /// Secret exits have an effect type, a horizontal offset, and a vertical offset.
     SecretExit {
-        effect : u8,
-        offset_x : i8,
-        offset_y : i8,
+        effect: u8,
+        offset_x: i8,
+        offset_y: i8,
     },
 
     /// A mural's parameters.
-    /// 
+    ///
     /// Murals hold a brand and a message encoded inside that brand.
-    Mural {
-        brand : Brand,
-        message : Message,
-    },
-
+    Mural { brand: Brand, message: Message },
 
     /// A type 1 Add statue's parameters.
     ///
     /// This takes in 2 [`InputValue`]s, see its documentation for details.
-    /// 
+    ///
     /// Unused since format version 3.
     AddStatue1 {
         /// See [`InputValue`].
@@ -420,7 +410,7 @@ pub enum ObjectType {
     ///
     /// This takes in 3 [`InputValue`]s and a [`BranefuckProgram`]
     /// program. See their documentation for details.
-    /// 
+    ///
     /// Unused since format version 3
     AddStatue2 {
         /// See [`InputValue`].
@@ -470,7 +460,6 @@ pub enum Direction {
     /// Encoded as `3`.
     Down,
 }
-
 
 /// A [Branefuck program](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck).
 ///
@@ -550,7 +539,7 @@ impl Sector {
     pub fn set_uploaded_from(&mut self, sector: &Self) -> Result<()> {
         let sections: Vec<&str> = self.cipher.0.splitn(SECTION_COUNT, '|').collect();
         if sections.len() != SECTION_COUNT {
-           return Err(Error::InvalidStructure); 
+            return Err(Error::InvalidStructure);
         }
         let version = sections[0];
         let name = sections[1];
@@ -710,11 +699,10 @@ impl Compendium {
         latest_version: impl Into<u8>,
         allowed_songs: impl AsRef<[String]>,
     ) -> Result<Self> {
-        let sections: Vec<&str> = cipher.as_ref()
-            .splitn(SECTION_COUNT, '|').collect();
+        let sections: Vec<&str> = cipher.as_ref().splitn(SECTION_COUNT, '|').collect();
 
         if sections.len() != SECTION_COUNT {
-            return Err(Error::InvalidStructure)
+            return Err(Error::InvalidStructure);
         }
 
         let version = sections[0];
@@ -888,8 +876,7 @@ impl ObjectType {
     #[allow(clippy::needless_pass_by_value)]
     pub fn add_statue(input: Vec<String>) -> Result<Self> {
         Ok(Self::AddStatue {
-            mode: u8::from_str(&input[0])
-                .map_err(|why| Error::InvalidObject(why.to_string()))?,
+            mode: u8::from_str(&input[0]).map_err(|why| Error::InvalidObject(why.to_string()))?,
             branefuck: BranefuckProgram::from_str(&input[1])
                 .map_err(|why| Error::InvalidObject(why.to_string()))?,
             destroy_value: InputValue::from_str(&input[2])
@@ -924,9 +911,10 @@ impl ObjectType {
     }
 }
 
-
 fn is_branefuck_valid(branefuck: &str) -> bool {
-    branefuck.chars().all(|c| ADDITIONAL_BRANEFUCK_CHARACTERS.contains(c) || c.is_alphanumeric())
+    branefuck
+        .chars()
+        .all(|c| ADDITIONAL_BRANEFUCK_CHARACTERS.contains(c) || c.is_alphanumeric())
 }
 
 impl FromStr for BranefuckProgram {
@@ -935,8 +923,7 @@ impl FromStr for BranefuckProgram {
     fn from_str(input: &str) -> Result<Self> {
         if is_branefuck_valid(input) {
             Ok(Self(input.into()))
-        }
-        else {
+        } else {
             Err(Error::InvalidObject(
                 "invalid branefuck character found".into(),
             ))
@@ -950,8 +937,7 @@ impl FromStr for InputValue {
     fn from_str(input: &str) -> Result<Self> {
         if is_branefuck_valid(input) {
             Ok(Self(input.into()))
-        }
-        else {
+        } else {
             Err(Error::InvalidObject(
                 "invalid branefuck character found".into(),
             ))
@@ -1301,7 +1287,6 @@ impl FromStr for ParsedObjects {
     }
 }
 
-
 impl FromStr for Theme {
     type Err = Error;
 
@@ -1344,7 +1329,7 @@ impl FromStr for Bount {
         }
         if too_small {
             return todo!();
-            /* 
+            /*
             Err(Error::InvalidBount(NumberError::TooSmall {
                 min: u64::from(MIN_BOUNT),
                 found: u64::from(bount),
@@ -1354,8 +1339,6 @@ impl FromStr for Bount {
         Ok(Self(bount))
     }
 }
-
-
 
 impl Default for Sigil {
     fn default() -> Self {
@@ -1494,10 +1477,10 @@ impl Display for ObjectType {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         let object_type = match self {
             Self::Direction { direction } => direction.to_string(),
-            Self::AddStatue { 
+            Self::AddStatue {
                 mode,
                 branefuck,
-                destroy_value
+                destroy_value,
             } => {
                 let branefuck = BASE64_STANDARD.encode(branefuck.to_string());
                 let destroy_value = BASE64_STANDARD.encode(destroy_value.to_string());
@@ -1538,7 +1521,11 @@ impl Display for ObjectType {
             Self::Offset { offset_x, offset_y } => {
                 format!("{offset_x}!{offset_y}!")
             }
-            Self::SecretExit { effect, offset_x, offset_y } => {
+            Self::SecretExit {
+                effect,
+                offset_x,
+                offset_y,
+            } => {
                 format!("{effect}!{offset_x}!{offset_y}!")
             }
             Self::Mural { brand, message } => {
@@ -1572,7 +1559,6 @@ impl Display for Direction {
         write!(f, "{direction}")
     }
 }
-
 
 impl IntoResponse for Sigil {
     fn into_response(self) -> Response {
