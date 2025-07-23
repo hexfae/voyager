@@ -18,12 +18,13 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::str::FromStr;
 use std::{convert::Infallible, io::Cursor, net::IpAddr};
-use time::OffsetDateTime;
 use tracing::warn;
 use ulid::Ulid;
 use unicode_segmentation::UnicodeSegmentation;
 
 const VOID_STRANGER_LEVEL_WIDTH: usize = 14;
+
+const SECTION_COUNT: usize = 13;
 
 /// A level's author's brand's highest value.
 ///
@@ -34,20 +35,27 @@ pub const BRAND_36_BITS: u64 = 0b1111_1111_1111_1111_1111_1111_1111_1111_1111;
 /// [Branefuck](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck)
 /// characters.
 ///
-/// These are the standard
-/// [Brainfuck](https://en.wikipedia.org/wiki/Brainfuck)
-/// characters, minus `,` (input is instead given in the level editor's
-/// UI), plus `?` (returns a number corresponding to the sign of the
-/// current cell's number), plus all decimal digits (since they may
-/// be used as multipliers, e.g. `+5` instead of `+++++`).
+/// These are the standard [Brainfuck](https://en.wikipedia.org/wiki/Brainfuck)
+/// characters, plus a few additional characters added by Endless Void.
+/// Additional, because all alphanumeric characters are allowed too.
 ///
 /// See [Endless Void's page on Branefuck](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck) for details.
-pub const BRANEFUCK_CHARACTERS: &str = "<>+-.[]?1234567890";
+pub const ADDITIONAL_BRANEFUCK_CHARACTERS: &str = ".,+-[]><?^_#:;\n ";
 
 /// A level's burdens' highest value.
 ///
-/// Equal to 2^4-1 or 15.
-pub const BURDENS_4_BITS: u8 = 0b1111;
+/// Equal to 2^5-1 or 32.
+pub const BURDENS_5_BITS: u8 = 0b11111;
+
+/// The max theme number.
+/// There's only two themes.
+pub const MAX_THEME: u8 = 1;
+
+/// The max brane count (Inclusive)
+pub const MAX_BOUNT: i16 = 999;
+
+// The minimum brane count (Inclusive)
+pub const MIN_BOUNT: i16 = -1;
 
 /// A level's author's max length.
 pub const MAX_AUTHOR_LEN: usize = 30;
@@ -92,6 +100,8 @@ pub struct Compendium {
     pub parsed_tiles: ParsedTiles,
     pub objects: Objects,
     pub parsed_objects: ParsedObjects,
+    pub theme: Theme,
+    pub bount: Bount,
 }
 
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
@@ -135,6 +145,7 @@ pub struct ParsedBurdens {
     wings: bool,
     sword: bool,
     stack_rod: bool,
+    idol: bool,
 }
 
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
@@ -148,6 +159,12 @@ pub struct Objects(String);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParsedObjects(Vec<Object>);
+
+#[derive(Debug, Display, Clone, Serialize, Deserialize)]
+pub struct Theme(u8);
+
+#[derive(Debug, Display, Clone, Serialize, Deserialize)]
+pub struct Bount(i16);
 
 /// A tile, as represented by [Endless Void](https://github.com/Skirlez/void-stranger-endless-void).
 ///
@@ -305,6 +322,8 @@ pub enum ObjectId {
     Egg,
     /// Encoded as `ho`.
     FakeEgg,
+    /// Encoded as `tr`.
+    Tree,
     /// Encoded as `mm`.
     MemoryCrystal,
     /// Encoded as `se`.
@@ -315,16 +334,19 @@ pub enum ObjectId {
     Scaredeer,
     /// Encoded as `cv`.
     OrbThing,
+    /// Encoded as `mu`.
+    Mural,
+    /// Encoded as `ts`.
+    TisStatue,
 }
 
 /// An object's type.
 ///
-/// There are 4 different types of object types, see
+/// There are 3 different types of object types, see
 /// their respective documentation for details:
 /// 1. [`Self::Direction`]
-/// 2. [`Self::AddStatue1`]
-/// 3. [`Self::AddStatue2`]
-/// 4. [`Self::Egg`]
+/// 2. [`Self::AddStatue`]
+/// 3. [`Self::Egg`]
 ///
 /// Note: An enemy with a direction of up (e.g. `ct0`)
 /// will get its type parsed as [`ObjectType::Egg`] with 0
@@ -333,24 +355,63 @@ pub enum ObjectId {
 /// will be encoded as `0`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ObjectType {
-    /// This object's [`Direction`].
+    /// This object's [`Direction`]. It's not actually a direction, but this represents every object that just has a single number after it.
     Direction {
         /// See [`Direction`].
         direction: Direction,
     },
+
+    /// An Add statue's parameters in either Simple or BRANEFUCK mode.
+    /// It should be noted that, in simple mode, the branefuck program parameter would just
+    /// be the name of a global variable or a number. Which isn't valid branefuck, but internally
+    /// it's inserted into a premade branefuck program so it can be thought of as an excerpt (which means it can be validated the same way we validate branefuck)
+    ///
+    /// All types of add statues since format version 3 use this.
+    AddStatue {
+        mode: u8,
+        branefuck: BranefuckProgram,
+        destroy_value: InputValue,
+    },
+
+    /// This object's horizontal and vertical [`Offset`]
+    ///
+    /// The object will be moved horizontally and vertically by offset_x and offset_y.
+    ///
+    /// Only one object currently uses this, that being [`ObjectId::MemoryCrystal``].
+    Offset { offset_x: i8, offset_y: i8 },
+
+    /// A secret exit's parameters.
+    ///
+    /// Secret exits have an effect type, a horizontal offset, and a vertical offset.
+    SecretExit {
+        effect: u8,
+        offset_x: i8,
+        offset_y: i8,
+    },
+
+    /// A mural's parameters.
+    ///
+    /// Murals hold a brand and a message encoded inside that brand.
+    Mural { brand: Brand, message: Message },
+
     /// A type 1 Add statue's parameters.
     ///
     /// This takes in 2 [`InputValue`]s, see its documentation for details.
+    ///
+    /// Unused since format version 3.
     AddStatue1 {
         /// See [`InputValue`].
         first_input: InputValue,
         /// See [`InputValue`].
         destroy_value: InputValue,
     },
+
     /// A type 2 Add statue's parameters.
     ///
-    /// This takes in 3 [`InputValue`]s and a [`BranefuckProgram `]
+    /// This takes in 3 [`InputValue`]s and a [`BranefuckProgram`]
     /// program. See their documentation for details.
+    ///
+    /// Unused since format version 3
     AddStatue2 {
         /// See [`InputValue`].
         first_input: InputValue,
@@ -361,10 +422,11 @@ pub enum ObjectType {
         /// See [`BranefuckProgram`].
         branefuck: BranefuckProgram,
     },
+
     /// An egg's messages.
     ///
-    /// An egg has a list of messages that will be displayed when interacted with (?). The
-    /// length may be (and is often) 0. The longest length found in the wild is 4 (the max?).
+    /// An egg has a list of messages that will be displayed when interacted with. The
+    /// length may be (and is often) 0. The maximum length is 4.
     Egg {
         /// See [`ObjectType::Egg`].
         messages: Vec<Message>,
@@ -383,8 +445,8 @@ pub struct Multiplier(pub u8);
 
 /// An object's direction.
 ///
-/// Encoded as a number between `0` and `3`. The reasoning behind these is
-/// "it's the same order of directions used in math for angles 0-360."
+/// Encoded as a number between `0` and `3`.
+/// Starts at 0 meaning right, and moves counter-clockwise, as is often done in math.
 ///
 /// This is only used for enemies, as far as I can tell.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -399,92 +461,24 @@ pub enum Direction {
     Down,
 }
 
-/// All valid input values for Add statues.
-///
-/// Valid inputs are any number, any
-/// [Endless Void global variable](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck#input-variables),
-/// and any vanilla global variable.
-///
-/// Listed are [all of the global variables Endless Void introduced](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck#input-variables).
-/// Since I haven't yet decompiled the game to check the vanilla global
-/// variables, the [`InputValue::Unknown`] variant wraps a [`String`].
-///
-/// See [Endless Void's page on Branefuck](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck)
-/// for details.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum InputValue {
-    /// Unknown input, either a number or a vanilla global variable.
-    ///
-    /// Since I don't know all of the available vanilla global variables,
-    /// and since a number is a valid input, this variant wraps a [`String`].
-    Unknown(String),
-    /// Global variable, encoded as `leech_count`.
-    LeechCount,
-    /// Global variable, encoded as `maggot_count`.
-    MaggotCount,
-    /// Global variable, encoded as `beaver_count`.
-    BeaverCount,
-    /// Global variable, encoded as `smile_count`.
-    SmileCount,
-    /// Global variable, encoded as `eye_count`.
-    EyeCount,
-    /// Global variable, encoded as `mimic_count`.
-    MimicCount,
-    /// Global variable, encoded as `octahedron_count`.
-    OctahedronCount,
-    /// Global variable, encoded as `spider_count`.
-    SpiderCount,
-    /// Global variable, encoded as `orb_count`.
-    OrbCount,
-    /// Global variable, encoded as `scaredeer_count`.
-    ScaredeerCount,
-    /// Global variable, encoded as `player_x`.
-    ///
-    /// This is between `0` and `13`.
-    PlayerX,
-    /// Global variable, encoded as `player_y`.
-    ///
-    /// This is between `0` and `8`.
-    PlayerY,
-    /// Global variable, encoded as `editor_time`.
-    EditorTime,
-    /// Global variable, encoded as `add_count`.
-    AddCount,
-    /// Global variable, encoded as `mon_count`.
-    MonCount,
-    /// Global variable, encoded as `tan_count`.
-    TanCount,
-    /// Global variable, encoded as `lev_count`.
-    LevCount,
-    /// Global variable, encoded as `eus_count`.
-    EusCount,
-    /// Global variable, encoded as `bee_count`.
-    BeeCount,
-    /// Global variable, encoded as `gor_count`.
-    GorCount,
-    /// Global variable, encoded as `cif_count`.
-    CifCount,
-    /// Global variable, encoded as `jukebox_count`.
-    JukeboxCount,
-    /// Global variable, encoded as `egg_count`.
-    EggCount,
-}
-
 /// A [Branefuck program](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck).
 ///
 /// Add statues are able to run
 /// [Branefuck programs](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck)
 /// in [Endless Void](https://github.com/Skirlez/void-stranger-endless-void).
 ///
-/// See [`BRANEFUCK_CHARACTERS`] for details on valid characters.
+/// See [`ADDITIONAL_BRANEFUCK_CHARACTERS`] for details on valid characters.
 ///
 /// See [Endless Void's page on Branefuck](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck) for further details.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
-pub struct BranefuckProgram(String);
+pub struct BranefuckProgram(pub String);
 
-/// An egg's message.
-///
-/// See [`ObjectType::Egg`] for details.
+/// An input value for Add statues.
+/// It can be a number, or a global variable name. We don't care which one.
+#[derive(Debug, Display, Clone, Serialize, Deserialize)]
+pub struct InputValue(pub String);
+
+/// An egg/mural's message.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Message(pub String);
 
@@ -518,11 +512,12 @@ impl Sector {
         })
     }
 
+    /*
     pub fn set_dates_to_now(&mut self) -> Result<()> {
-        let (version, name, description, music, author, brand, _, _, burdens, tiles, objects) =
+        let (version, name, description, music, author, brand, _, _, burdens, tiles, objects, theme, bount) =
             self.cipher
                 .0
-                .splitn(11, '|')
+                .splitn(13, '|')
                 .collect_tuple()
                 .ok_or(Error::InvalidStructure)?;
 
@@ -533,24 +528,34 @@ impl Sector {
             // 20250302
             .replace('-', "");
         self.cipher = Cipher(format!(
-            "{version}|{name}|{description}|{music}|{author}|{brand}|{now}|{now}|{burdens}|{tiles}|{objects}"
+            "{version}|{name}|{description}|{music}|{author}|{brand}|{now}|{now}|{burdens}|{tiles}|{objects}|{theme}|{bount}"
         ));
         self.compendium.uploaded = Uploaded(now.clone());
         self.compendium.edited = Edited(now);
         Ok(())
     }
+    */
 
     pub fn set_uploaded_from(&mut self, sector: &Self) -> Result<()> {
+        let sections: Vec<&str> = self.cipher.0.splitn(SECTION_COUNT, '|').collect();
+        if sections.len() != SECTION_COUNT {
+            return Err(Error::InvalidStructure);
+        }
+        let version = sections[0];
+        let name = sections[1];
+        let description = sections[2];
+        let music = sections[3];
+        let author = sections[4];
+        let brand = sections[5];
         let uploaded = sector.compendium.uploaded.clone();
-        let (version, name, description, music, author, brand, _, edited, burdens, tiles, objects) =
-            self.cipher
-                .0
-                .splitn(11, '|')
-                .collect_tuple()
-                .ok_or(Error::InvalidStructure)?;
-
+        let edited = sections[7];
+        let burdens = sections[8];
+        let tiles = sections[9];
+        let objects = sections[10];
+        let theme = sections[11];
+        let bount = sections[12];
         self.cipher = Cipher(format!(
-            "{version}|{name}|{description}|{music}|{author}|{brand}|{uploaded}|{edited}|{burdens}|{tiles}|{objects}"
+            "{version}|{name}|{description}|{music}|{author}|{brand}|{uploaded}|{edited}|{burdens}|{tiles}|{objects}|{theme}|{bount}"
         ));
         self.compendium.uploaded = uploaded;
         Ok(())
@@ -658,9 +663,13 @@ impl Sector {
     pub fn parsed_burdens(&self) -> ParsedBurdens {
         self.compendium.parsed_burdens.clone()
     }
+    #[must_use]
+    pub fn sigil(&self) -> Sigil {
+        self.sigil
+    }
 
     #[must_use]
-    pub fn sigil(&self) -> String {
+    pub fn sigil_string(&self) -> String {
         self.sigil.to_string()
     }
 
@@ -690,23 +699,25 @@ impl Compendium {
         latest_version: impl Into<u8>,
         allowed_songs: impl AsRef<[String]>,
     ) -> Result<Self> {
-        let (
-            version,
-            name,
-            description,
-            music,
-            author,
-            brand,
-            uploaded,
-            edited,
-            burdens,
-            tiles,
-            objects,
-        ) = cipher
-            .as_ref()
-            .splitn(11, '|')
-            .collect_tuple()
-            .ok_or(Error::InvalidStructure)?;
+        let sections: Vec<&str> = cipher.as_ref().splitn(SECTION_COUNT, '|').collect();
+
+        if sections.len() != SECTION_COUNT {
+            return Err(Error::InvalidStructure);
+        }
+
+        let version = sections[0];
+        let name = sections[1];
+        let description = sections[2];
+        let music = sections[3];
+        let author = sections[4];
+        let brand = sections[5];
+        let uploaded = sections[6];
+        let edited = sections[7];
+        let burdens = sections[8];
+        let tiles = sections[9];
+        let objects = sections[10];
+        let theme = sections[11];
+        let bount = sections[12];
 
         let version = Version::from_str(version, latest_version)?;
         let name = name.parse()?;
@@ -724,6 +735,9 @@ impl Compendium {
         let parsed_objects = objects.parse()?;
         let objects = objects.parse()?;
 
+        let theme = theme.parse()?;
+        let bount = bount.parse()?;
+
         Ok(Self {
             version,
             name,
@@ -740,6 +754,8 @@ impl Compendium {
             parsed_tiles,
             objects,
             parsed_objects,
+            theme,
+            bount,
         })
     }
 }
@@ -783,13 +799,16 @@ impl ObjectId {
             | Self::LevStatue
             | Self::MonStatue
             | Self::EusStatue
-            | Self::GorStatue => "🗿",
+            | Self::GorStatue
+            | Self::TisStatue => "🗿",
             Self::Jukebox => "📻️",
             Self::Egg | Self::FakeEgg => "🪨",
             Self::MemoryCrystal => "✨",
             Self::Spider => "🕷️",
             Self::Scaredeer => "🦌",
             Self::OrbThing => "💡",
+            Self::Tree => "🌳",
+            Self::Mural => "📜",
         }
         .to_string()
     }
@@ -812,7 +831,8 @@ impl ParsedTiles {
         let wings = if burdens.wings { "🪽" } else { "⬜️" };
         let sword = if burdens.sword { "🗡️" } else { "⬜️" };
         let rod = if burdens.stack_rod { "🪄" } else { "🪈" };
-        let hud_tiles = format!("⬜️OD⬜️🪰0{rod}⬜️{memory}{wings}{sword}⬜️V?");
+        let idol = if burdens.idol { "⚕️" } else { "⬜️" };
+        let hud_tiles = format!("⬜️OD⬜️🪰0{rod}{idol}{memory}{wings}{sword}⬜️V?");
         map.push_str(&hud_tiles);
         map.graphemes(true)
             .chunks(VOID_STRANGER_LEVEL_WIDTH)
@@ -854,28 +874,24 @@ impl ObjectType {
 
     // TODO: get rid of this
     #[allow(clippy::needless_pass_by_value)]
-    pub fn add_statue(input: Vec<String>) -> Result<Self> {
-        match input.len() {
-            2 => Ok(Self::AddStatue1 {
-                first_input: InputValue::from_str(&input[0])
-                    .map_err(|why| Error::InvalidObject(why.to_string()))?,
-                destroy_value: InputValue::from_str(&input[1])
-                    .map_err(|why| Error::InvalidObject(why.to_string()))?,
-            }),
-            4 => Ok(Self::AddStatue2 {
-                first_input: InputValue::from_str(&input[0])
-                    .map_err(|why| Error::InvalidObject(why.to_string()))?,
-                second_input: InputValue::from_str(&input[1])
-                    .map_err(|why| Error::InvalidObject(why.to_string()))?,
-                destroy_value: InputValue::from_str(&input[2])
-                    .map_err(|why| Error::InvalidObject(why.to_string()))?,
-                branefuck: BranefuckProgram::from_str(&input[3])
-                    .map_err(|why| Error::InvalidObject(why.to_string()))?,
-            }),
-            other => Err(Error::InvalidObject(format!(
-                "invalid add statue length of {other}"
-            ))),
-        }
+    pub fn add_statue((prefix, (first, second)): (char, (String, String))) -> Result<Self> {
+        let prefix = u8::try_from(prefix).map_err(|why| Error::InvalidObject(why.to_string()))?;
+        let first = BranefuckProgram::from_str(&first)
+            .map_err(|why| Error::InvalidObject(why.to_string()))?;
+        let second =
+            InputValue::from_str(&second).map_err(|why| Error::InvalidObject(why.to_string()))?;
+        Ok(Self::AddStatue {
+            mode: prefix,
+            branefuck: first,
+            destroy_value: second,
+        })
+        // Ok(Self::AddStatue {
+        //     mode: u8::from_str(&input[0]).map_err(|why| Error::InvalidObject(why.to_string()))?,
+        //     branefuck: BranefuckProgram::from_str(&input[1])
+        //         .map_err(|why| Error::InvalidObject(why.to_string()))?,
+        //     destroy_value: InputValue::from_str(&input[2])
+        //         .map_err(|why| Error::InvalidObject(why.to_string()))?,
+        // })
     }
 
     /// Attempts to parse the input as [`ObjectType::Direction`].
@@ -891,13 +907,92 @@ impl ObjectType {
                 .map_err(|why| Error::InvalidObject(why.to_string()))?,
         })
     }
+
+    pub fn offset(
+        ((first_sign, x), (second_sign, y)): ((Option<char>, &str), (Option<char>, &str)),
+    ) -> Result<Self> {
+        let mut x = x
+            .parse::<i8>()
+            .map_err(|why| Error::InvalidObject(why.to_string()))?;
+        let mut y = y
+            .parse::<i8>()
+            .map_err(|why| Error::InvalidObject(why.to_string()))?;
+        if first_sign.is_some() {
+            x = -x;
+        }
+        if second_sign.is_some() {
+            y = -y;
+        }
+
+        Ok(Self::Offset {
+            offset_x: x,
+            offset_y: y,
+        })
+    }
+
+    pub fn secret_exit(
+        (effect, (first_sign, x), (second_sign, y)): (
+            &str,
+            (Option<char>, &str),
+            (Option<char>, &str),
+        ),
+    ) -> Result<Self> {
+        let effect = effect
+            .parse::<u8>()
+            .map_err(|why| Error::InvalidObject(why.to_string()))?;
+        let mut x = x
+            .parse::<i8>()
+            .map_err(|why| Error::InvalidObject(why.to_string()))?;
+        let mut y = y
+            .parse::<i8>()
+            .map_err(|why| Error::InvalidObject(why.to_string()))?;
+        if first_sign.is_some() {
+            x = -x;
+        }
+        if second_sign.is_some() {
+            y = -y;
+        }
+
+        Ok(ObjectType::SecretExit {
+            effect,
+            offset_x: x,
+            offset_y: y,
+        })
+    }
+
+    pub fn mural((brand, message): (&str, String)) -> Result<Self> {
+        Ok(ObjectType::Mural {
+            brand: brand.parse()?,
+            message: Message(message),
+        })
+    }
+}
+
+fn is_branefuck_valid(branefuck: &str) -> bool {
+    branefuck
+        .chars()
+        .all(|c| ADDITIONAL_BRANEFUCK_CHARACTERS.contains(c) || c.is_alphanumeric())
 }
 
 impl FromStr for BranefuckProgram {
     type Err = Error;
 
     fn from_str(input: &str) -> Result<Self> {
-        if input.chars().all(|c| BRANEFUCK_CHARACTERS.contains(c)) {
+        if is_branefuck_valid(input) {
+            Ok(Self(input.into()))
+        } else {
+            Err(Error::InvalidObject(
+                "invalid branefuck character found".into(),
+            ))
+        }
+    }
+}
+
+impl FromStr for InputValue {
+    type Err = Error;
+
+    fn from_str(input: &str) -> Result<Self> {
+        if is_branefuck_valid(input) {
             Ok(Self(input.into()))
         } else {
             Err(Error::InvalidObject(
@@ -944,7 +1039,7 @@ impl Version {
         if is_zero {
             return Err(Error::InvalidVersion(NumberError::TooSmall {
                 min: 1,
-                found: u64::from(version),
+                found: i64::from(version),
             }));
         }
         Ok(Self(version))
@@ -1092,9 +1187,9 @@ impl FromStr for Burdens {
         let burdens = input
             .parse::<u8>()
             .map_err(|why| Error::InvalidBurdens(NumberError::NotANumber(why)))?;
-        if burdens > BURDENS_4_BITS {
+        if burdens > BURDENS_5_BITS {
             return Err(Error::InvalidBurdens(NumberError::TooBig {
-                max: u64::from(BURDENS_4_BITS),
+                max: u64::from(BURDENS_5_BITS),
                 found: u64::from(burdens),
             }));
         }
@@ -1110,6 +1205,7 @@ impl From<&Burdens> for ParsedBurdens {
             wings: bits[1],
             sword: bits[2],
             stack_rod: bits[3],
+            idol: bits[4],
         }
     }
 }
@@ -1226,6 +1322,9 @@ impl FromStr for ObjectId {
             "ct" => Ok(Self::Spider),
             "sd" => Ok(Self::Scaredeer),
             "cv" => Ok(Self::OrbThing),
+            "tr" => Ok(Self::Tree),
+            "mu" => Ok(Self::Mural),
+            "ts" => Ok(Self::TisStatue),
             other => Err(Error::InvalidObject(other.to_string())),
         }
     }
@@ -1242,6 +1341,56 @@ impl FromStr for ParsedObjects {
     /// or some other invalid input.
     fn from_str(input: &str) -> Result<Self> {
         parse_objects(input)
+    }
+}
+
+impl FromStr for Theme {
+    type Err = Error;
+
+    fn from_str(input: &str) -> Result<Self> {
+        // TODO: only allow matching versions to be uploaded
+        let theme = input
+            .parse::<u8>()
+            .map_err(|why| Error::InvalidTheme(NumberError::NotANumber(why)))?;
+
+        let too_big = theme > MAX_THEME;
+
+        if too_big {
+            return Err(Error::InvalidTheme(NumberError::TooBig {
+                max: u64::from(MAX_THEME),
+                found: u64::from(theme),
+            }));
+        }
+
+        Ok(Self(theme))
+    }
+}
+
+impl FromStr for Bount {
+    type Err = Error;
+
+    fn from_str(input: &str) -> Result<Self> {
+        // TODO: only allow matching versions to be uploaded
+        let bount = input
+            .parse::<i16>()
+            .map_err(|why| Error::InvalidBount(NumberError::NotANumber(why)))?;
+
+        let too_big = bount > MAX_BOUNT;
+        let too_small = bount < MIN_BOUNT;
+
+        if too_big {
+            return Err(Error::InvalidBount(NumberError::TooBig {
+                max: MAX_BOUNT as u64,
+                found: bount as u64,
+            }));
+        }
+        if too_small {
+            return Err(Error::InvalidBount(NumberError::TooSmall {
+                min: i64::from(MIN_BOUNT),
+                found: i64::from(bount),
+            }));
+        }
+        Ok(Self(bount))
     }
 }
 
@@ -1270,39 +1419,6 @@ impl FromStr for Direction {
             "3" => Ok(Self::Down),
             other => Err(Error::InvalidObject(format!("bad direction {other}"))),
         }
-    }
-}
-
-impl FromStr for InputValue {
-    type Err = Infallible;
-
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        Ok(match s {
-            "leech_count" => Self::LeechCount,
-            "maggot_count" => Self::MaggotCount,
-            "beaver_count" => Self::BeaverCount,
-            "smile_count" => Self::SmileCount,
-            "eye_count" => Self::EyeCount,
-            "mimic_count" => Self::MimicCount,
-            "octahedron_count" => Self::OctahedronCount,
-            "spider_count" => Self::SpiderCount,
-            "orb_count" => Self::OrbCount,
-            "scaredeer_count" => Self::ScaredeerCount,
-            "player_x" => Self::PlayerX,
-            "player_y" => Self::PlayerY,
-            "editor_time" => Self::EditorTime,
-            "add_count" => Self::AddCount,
-            "mon_count" => Self::MonCount,
-            "tan_count" => Self::TanCount,
-            "lev_count" => Self::LevCount,
-            "eus_count" => Self::EusCount,
-            "bee_count" => Self::BeeCount,
-            "gor_count" => Self::GorCount,
-            "cif_count" => Self::CifCount,
-            "jukebox_count" => Self::JukeboxCount,
-            "egg_count" => Self::EggCount,
-            other => Self::Unknown(other.to_string()),
-        })
     }
 }
 
@@ -1403,6 +1519,9 @@ impl Display for ObjectId {
             Self::Spider => "ct",
             Self::Scaredeer => "sd",
             Self::OrbThing => "cv",
+            Self::Mural => "mu",
+            Self::Tree => "tr",
+            Self::TisStatue => "ts",
         };
         write!(f, "{id}")
     }
@@ -1412,6 +1531,15 @@ impl Display for ObjectType {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         let object_type = match self {
             Self::Direction { direction } => direction.to_string(),
+            Self::AddStatue {
+                mode,
+                branefuck,
+                destroy_value,
+            } => {
+                let branefuck = BASE64_STANDARD.encode(branefuck.to_string());
+                let destroy_value = BASE64_STANDARD.encode(destroy_value.to_string());
+                format!("{mode}!{branefuck}!{destroy_value}!")
+            }
             Self::AddStatue1 {
                 first_input,
                 destroy_value,
@@ -1423,12 +1551,12 @@ impl Display for ObjectType {
             Self::AddStatue2 {
                 first_input,
                 second_input,
-                destroy_value,
                 branefuck,
+                destroy_value,
             } => {
-                let first_input = BASE64_STANDARD.encode(first_input.to_string());
-                let second_input = BASE64_STANDARD.encode(second_input.to_string());
+                let branefuck = BASE64_STANDARD.encode(branefuck.to_string());
                 let destroy_value = BASE64_STANDARD.encode(destroy_value.to_string());
+                // TODO: This may not be the correct order but this is legacy anyways
                 format!("2{first_input}!{second_input}!{destroy_value}!{branefuck}!")
             }
             Self::Egg { messages } => {
@@ -1443,6 +1571,19 @@ impl Display for ObjectType {
                 } else {
                     format!("{len}{messages}!")
                 }
+            }
+            Self::Offset { offset_x, offset_y } => {
+                format!("{offset_x}!{offset_y}!")
+            }
+            Self::SecretExit {
+                effect,
+                offset_x,
+                offset_y,
+            } => {
+                format!("{effect}!{offset_x}!{offset_y}!")
+            }
+            Self::Mural { brand, message } => {
+                format!("{brand}!{message}!")
             }
         };
         write!(f, "{object_type}")
@@ -1470,38 +1611,6 @@ impl Display for Direction {
             Self::Down => "3",
         };
         write!(f, "{direction}")
-    }
-}
-
-impl Display for InputValue {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        let value = match self {
-            Self::Unknown(value) => value,
-            Self::LeechCount => "leech_count",
-            Self::MaggotCount => "maggot_count",
-            Self::BeaverCount => "beaver_count",
-            Self::SmileCount => "smile_count",
-            Self::EyeCount => "eye_count",
-            Self::MimicCount => "mimic_count",
-            Self::OctahedronCount => "octahedron_count",
-            Self::SpiderCount => "spider_count",
-            Self::OrbCount => "orb_count",
-            Self::ScaredeerCount => "scaredeer_count",
-            Self::PlayerX => "player_x",
-            Self::PlayerY => "player_y",
-            Self::EditorTime => "editor_time",
-            Self::AddCount => "add_count",
-            Self::MonCount => "mon_count",
-            Self::TanCount => "tan_count",
-            Self::LevCount => "lev_count",
-            Self::EusCount => "eus_count",
-            Self::BeeCount => "bee_count",
-            Self::GorCount => "gor_count",
-            Self::CifCount => "cif_count",
-            Self::JukeboxCount => "jukebox_count",
-            Self::EggCount => "egg_count",
-        };
-        write!(f, "{value}")
     }
 }
 

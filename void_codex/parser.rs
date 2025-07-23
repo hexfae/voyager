@@ -11,23 +11,24 @@ use crate::sector::{
 };
 use base64::{Engine, prelude::BASE64_STANDARD};
 use itertools::Itertools;
+use nom::Parser;
+use nom::sequence::{pair, preceded, terminated};
 use nom::{
     IResult,
     branch::alt,
     bytes::complete::take_while_m_n,
     bytes::complete::{take, take_until, take_until1, take_while, take_while1},
-    character::complete::char,
+    character::complete::{char, one_of},
     combinator::map_res,
     combinator::{all_consuming, opt},
     multi::{count, many1},
-    sequence::{pair, preceded, terminated, tuple},
 };
 use std::str::FromStr;
 use tracing::{info, warn};
 
 // for documentation
 #[allow(unused_imports)]
-use crate::sector::{BranefuckProgram, InputValue};
+use crate::sector::BranefuckProgram;
 
 /// Attempts to parse the input as a valid sequence of tiles.
 ///
@@ -37,8 +38,9 @@ use crate::sector::{BranefuckProgram, InputValue};
 /// [`TileId`], an invalid [`TileType`], an invalid [`Multiplier`],
 /// or some other invalid input.
 pub fn parse_tiles(input: &str) -> Result<ParsedTiles> {
-    let (_, tiles) =
-        all_consuming(many1(tuple((tile_id, tile_type, multiplier))))(input).map_err(|why| {
+    let (_, tiles) = all_consuming(many1((tile_id, tile_type, multiplier)))
+        .parse(input)
+        .map_err(|why| {
             warn!("{why}");
             Error::InvalidTile(why.to_string())
         })?;
@@ -68,7 +70,8 @@ pub fn parse_tiles(input: &str) -> Result<ParsedTiles> {
 /// [`ObjectId`], an invalid [`ObjectType`], an invalid [`Multiplier`],
 /// or some other invalid input.
 pub fn parse_objects(input: &str) -> Result<ParsedObjects> {
-    let (_, objects) = all_consuming(many1(tuple((object_id, object_type, multiplier))))(input)
+    let (_, objects) = all_consuming(many1((object_id, object_type, multiplier)))
+        .parse(input)
         .map_err(|why| {
             warn!("{why}");
             Error::InvalidObject(why.to_string())
@@ -95,7 +98,7 @@ pub fn parse_objects(input: &str) -> Result<ParsedObjects> {
 ///
 /// See [`TileId`] for all valid tile IDs.
 fn tile_id(input: &str) -> IResult<&str, TileId> {
-    map_res(take_while_m_n(2, 2, is_lowercase), TileId::from_str)(input)
+    map_res(take_while_m_n(2, 2, is_lowercase), TileId::from_str).parse(input)
 }
 
 /// Attempts to parse the input as an [`ObjectId`].
@@ -107,7 +110,7 @@ fn tile_id(input: &str) -> IResult<&str, TileId> {
 ///
 /// See [`ObjectId`] for details.
 fn object_id(input: &str) -> IResult<&str, ObjectId> {
-    map_res(take_while_m_n(2, 2, is_lowercase), ObjectId::from_str)(input)
+    map_res(take_while_m_n(2, 2, is_lowercase), ObjectId::from_str).parse(input)
 }
 
 /// Attempts to parse the input as a [`TileType`].
@@ -129,13 +132,24 @@ fn tile_type(input: &str) -> IResult<&str, Option<TileType>> {
 ///
 /// Examples of valid inputs:
 /// 1. `2` ([`ObjectType::Direction`])
-/// 2. `1bGVlY2hfY291bnQ=!Mw==!` ([`ObjectType::AddStatue1`])
-/// 3. `2bGVlY2hfY291bnQ=!Mg==!MQ==![->-<]>?.!` ([`ObjectType::AddStatue2`])
-/// 4. `4aGVsbG8=!dGhlc2UgYXJl!bWVzc2FnZXM=!bG9s!` ([`ObjectType::Egg`])
+/// 2. `2!LGc6bGVlY2hfY291bnQsLS0=!MQ==!` ([`ObjectType::AddStatue`])
+/// 3. `4aGVsbG8=!dGhlc2UgYXJl!bWVzc2FnZXM=!bG9s!` ([`ObjectType::Egg`])
+/// 4.
 ///
-/// See [`add_statue()`], [`egg()`], and [`direction`] for details.
+/// See [`add_statue()`], [`egg()`], [`direction`], [`offset`], [`secret_exit`], and [`mural`] for details.
 fn object_type(input: &str) -> IResult<&str, Option<ObjectType>> {
-    opt(alt((add_statue, egg, direction)))(input)
+    opt(alt((
+        // NOTE: offset must be before egg because otherwise egg will
+        // parse only part of an offset and then the parser will error,
+        // same with egg and direction
+        add_statue,
+        secret_exit,
+        offset,
+        egg,
+        direction,
+        mural,
+    )))
+    .parse(input)
 }
 
 /// Attempts to parse the input as a [`Multiplier`].
@@ -146,20 +160,13 @@ fn object_type(input: &str) -> IResult<&str, Option<ObjectType>> {
 /// [`Multiplier`]. However, multipliers are prefixed by `X`, so the input
 /// must begin with `X` in order to be valid.
 fn multiplier(input: &str) -> IResult<&str, Option<Multiplier>> {
-    let (remaining, multiplier) = opt(preceded(char('X'), take_while(is_digit)))(input)?;
+    let (remaining, multiplier) = opt(preceded(char('X'), take_while(is_digit))).parse(input)?;
     multiplier.map_or(Ok((remaining, None)), |multiplier| {
         let multiplier = multiplier.parse::<u8>().ok();
         multiplier.map_or(Ok((remaining, None)), |multiplier| {
             Ok((remaining, Some(Multiplier(multiplier))))
         })
     })
-}
-
-/// Attempts to parse the input as either type of Add statue.
-///
-/// See [`add_statue1()`] and [`add_statue2()`] for details.
-fn add_statue(input: &str) -> IResult<&str, ObjectType> {
-    alt((add_statue1, add_statue2))(input)
 }
 
 /// Attempts to parse the input as an [`ObjectType::Egg`].
@@ -172,11 +179,13 @@ fn add_statue(input: &str) -> IResult<&str, ObjectType> {
 /// 2. `1aGVsbG8=!`
 /// 3. `4aGk=!aGV5!eW8=!aGFoYQ==!`
 fn egg(input: &str) -> IResult<&str, ObjectType> {
-    let (remaining, number_of_messages) = map_res(take(1u8), |n: &str| n.parse::<usize>())(input)?;
+    let (remaining, number_of_messages) =
+        map_res(take(1u8), |n: &str| n.parse::<usize>()).parse(input)?;
     let (remaining, messages) = count(
         take_until_termination_character_then_decode_base64,
         number_of_messages,
-    )(remaining)?;
+    )
+    .parse(remaining)?;
     let messages = ObjectType::egg(messages);
     Ok((remaining, messages))
 }
@@ -190,59 +199,88 @@ fn egg(input: &str) -> IResult<&str, ObjectType> {
 ///
 /// See [`ObjectType::direction()`] for details.
 fn direction(input: &str) -> IResult<&str, ObjectType> {
-    map_res(take_while1(is_digit), ObjectType::direction)(input)
+    map_res(take_while1(is_digit), ObjectType::direction).parse(input)
 }
 
-/// Attempts to parse the input as an [`ObjectType::AddStatue1`].
+/// Attempts to parse the input as an [`ObjectType::Offset`].
 ///
-/// An [`ObjectType::AddStatue1`] is prefixed by a `1`, followed by 2
-/// [`InputValue`]s, both Base64-encoded and `!`-terminated.
+/// It attempts to take two signed integers terminated by `!`.
 ///
-/// Example of valid input: `1cGxheWVyX3g=!Ng==!`
-fn add_statue1(input: &str) -> IResult<&str, ObjectType> {
-    preceded(
-        char('1'),
-        map_res(
-            count(take_until_termination_character_then_decode_base64, 2),
-            ObjectType::add_statue,
+/// Example of valid input: `10!-5!`
+///
+/// See [`ObjectType::offset()`] for details.
+fn offset(input: &str) -> IResult<&str, ObjectType> {
+    map_res(
+        pair(
+            terminated((opt(char('-')), take_while1(is_digit)), char('!')),
+            terminated((opt(char('-')), take_while1(is_digit)), char('!')),
         ),
-    )(input)
+        ObjectType::offset,
+    )
+    .parse(input)
 }
 
-/// Attempts to parse the input as an [`ObjectType::AddStatue2`].
+/// Attempts to parse the input as an [`ObjectType::SecretExit`].
 ///
-/// An [`ObjectType::AddStatue2`] is prefixed by a `2`, followed
-/// by 3 [`InputValue`]s, and a [`BranefuckProgram`]. The first
-/// 3 parameters are Base64-encoded, and all are `!`-terminated.
+/// It attempts to take a single digit for its effect, and two signed integers for the offset,
+/// all terminated by a `!` character.
 ///
-/// Example of valid input: `2bGVlY2hfY291bnQ=!Mg==!MQ==![->-<]>?.!`
-fn add_statue2(input: &str) -> IResult<&str, ObjectType> {
-    preceded(
-        char('2'),
-        map_res(
-            map_res(
-                pair(
-                    count(take_until_termination_character_then_decode_base64, 3),
-                    take_until_termination_character,
-                ),
-                append_branefuck_to_parameters,
+/// Example of valid input: `2!10!-5!`
+///
+/// See [`ObjectType::secret_exit()`] for details.
+fn secret_exit(input: &str) -> IResult<&str, ObjectType> {
+    map_res(
+        (
+            terminated(take(1usize), char('!')),
+            terminated((opt(char('-')), take_while1(is_digit)), char('!')),
+            terminated((opt(char('-')), take_while1(is_digit)), char('!')),
+        ),
+        ObjectType::secret_exit,
+    )
+    .parse(input)
+}
+
+/// Attempts to parse the input as an [`ObjectType::Mural`].
+///
+/// It attempts to read an unsigned integer as for the brand, and a Base64-encoded string for the message,
+/// both terminated by a `!` character.
+///
+/// Example of valid input: `1007159424!dm95YWdlcg==!`
+///
+/// See [`ObjectType::mural()`] for details.
+
+fn mural(input: &str) -> IResult<&str, ObjectType> {
+    map_res(
+        pair(
+            take_until_termination_character,
+            take_until_termination_character_then_decode_base64,
+        ),
+        ObjectType::mural,
+    )
+    .parse(input)
+}
+
+/// Attempts to parse the input as an [`ObjectType::AddStatue`].
+///
+/// An [`ObjectType::AddStatue`] is prefixed by a `1` or `2`, followed by 2
+/// Base64-encoded, `!`-terminated strings.
+///
+/// Examples of valid input:
+/// 1!bGVlY2hfY291bnQ=!Mw==!
+/// 2!LGc6bGVlY2hfY291bnQsLS0=!MQ==!
+///
+fn add_statue(input: &str) -> IResult<&str, ObjectType> {
+    map_res(
+        pair(
+            terminated(one_of("12"), char('!')),
+            pair(
+                take_until_termination_character_then_decode_base64,
+                take_until_termination_character_then_decode_base64,
             ),
-            ObjectType::add_statue,
         ),
-    )(input)
-}
-
-/// Appends a [`&str`] to a [`Vec`] of [`String`]s.
-///
-/// This is a workaround. In [`add_statue2()`], a `(Vec<String>, &str)` is returned,
-/// but `ObjectType::add_statue()` takes in a `Vec<String>`. This function simply turns
-/// the `(Vec<String>, &str)` into `Vec<String>` by appending the `&str`. Additionally,
-/// `nom`'s `map_res()` function takes in a function that returns a `Result<T, E>`, so
-/// this function wraps the result in a `Result<T, E>`.
-// map_res needs a function that returns a result
-#[allow(clippy::unnecessary_wraps)]
-fn append_branefuck_to_parameters(input: (Vec<String>, &str)) -> Result<Vec<String>> {
-    Ok([input.0, vec![input.1.into()]].concat())
+        ObjectType::add_statue,
+    )
+    .parse(input)
 }
 
 /// Attempts to take characters until `!` is found.
@@ -252,8 +290,10 @@ fn append_branefuck_to_parameters(input: (Vec<String>, &str)) -> Result<Vec<Stri
 /// This is used for the
 /// [Branefuck program](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck)
 /// parameter of type 2 Add statues.
+///
+/// Unused as of format version 3 (Since then, Branefuck programs are Base64-encoded)
 fn take_until_termination_character(input: &str) -> IResult<&str, &str> {
-    terminated(take_until1("!"), char('!'))(input)
+    terminated(take_until1("!"), char('!')).parse(input)
 }
 
 /// Attempts to take characters until `!` is found, then Base64-decodes them.
@@ -263,7 +303,7 @@ fn take_until_termination_character(input: &str) -> IResult<&str, &str> {
 /// This is used in many places. For example, most parameters of Add statues
 /// are `!`-terminated, as well as all messages of eggs.
 fn take_until_termination_character_then_decode_base64(input: &str) -> IResult<&str, String> {
-    terminated(map_res(take_until("!"), decode_base64), char('!'))(input)
+    terminated(map_res(take_until("!"), decode_base64), char('!')).parse(input)
 }
 
 /// Attempts to Base64-decode the input.

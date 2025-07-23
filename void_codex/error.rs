@@ -8,8 +8,8 @@ use thiserror::Error;
 // for documentation
 #[allow(unused_imports)]
 use crate::{
-    BRAND_36_BITS, BURDENS_4_BITS, Direction, InputValue, MAX_AUTHOR_LEN, MAX_DESCRIPTION_LEN,
-    MAX_NAME_LEN, Objects, Tiles, parser,
+    BRAND_36_BITS, BURDENS_5_BITS, Direction, MAX_AUTHOR_LEN, MAX_DESCRIPTION_LEN, MAX_NAME_LEN,
+    Objects, Tiles, parser,
 };
 #[allow(unused_imports)]
 use std::str::FromStr;
@@ -17,13 +17,13 @@ use std::str::FromStr;
 /// All level errors.
 #[derive(Error, Debug)]
 pub enum Error {
-    /// The number of separators was invalid. Input data should contain 11
-    /// separators ('|') for level uploads and 12 separators for level edits.
+    /// The number of separators was invalid. Input data should contain 13
+    /// separators ('|') for level uploads and 14 separators for level edits.
     #[error("invalid request structure")]
     InvalidStructure,
     /// The format version is not a number, is too small (<1), or is too big.
     ///
-    /// At the time of writing (2024-07-16), the latest format version is 2.
+    /// At the time of writing (2025-06-08), the latest format version is 3.
     #[error("invalid format version: {0}")]
     InvalidVersion(NumberError),
     /// The name is too short (0), is too long (>[`MAX_NAME_LEN`]), is invalid
@@ -47,7 +47,7 @@ pub enum Error {
     /// The author's brand is not encoded as a number, or is too big ([`BRAND_36_BITS`]).
     #[error("invalid brand: {0}")]
     InvalidBrand(NumberError),
-    /// The level's burdens are not encoded as a number, or is too big ([`BURDENS_4_BITS`]).
+    /// The level's burdens are not encoded as a number, or is too big ([`BURDENS_5_BITS`]).
     #[error("invalid burdens: {0}")]
     InvalidBurdens(NumberError),
     /// The level's tiles are considered invalid by the [`parser`].
@@ -56,6 +56,13 @@ pub enum Error {
     /// The level's objects are considered invalid by the [`parser`].
     #[error("invalid object: {0}")]
     InvalidObject(String),
+    /// The level's theme is not encoded as a number, or is too big ([`MAX_THEME`]).
+    #[error("invalid theme: {0}")]
+    InvalidTheme(NumberError),
+    /// The level's bount is not encoded as a number, or is too big ([`MAX_BOUNT`]), or if it's too small ([`MIN_BOUNT`])
+    #[error("invalid bount: {0}")]
+    InvalidBount(NumberError),
+
     /// The key is not a valid [ULID](https://github.com/ulid/spec) key.
     #[error("key error: {0}")]
     InvalidKey(#[from] ulid::DecodeError),
@@ -80,9 +87,9 @@ pub enum NumberError {
     #[error("too small of a number: {found} < {min}")]
     TooSmall {
         /// The lowest allowed number.
-        min: u64,
+        min: i64,
         /// The input.
-        found: u64,
+        found: i64,
     },
     /// The input is too big of a number.
     #[error("too big of a number: {found} > {max}")]
