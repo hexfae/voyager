@@ -8,8 +8,8 @@ use thiserror::Error;
 // for documentation
 #[allow(unused_imports)]
 use crate::{
-    BRAND_36_BITS, BURDENS_5_BITS, Direction, MAX_AUTHOR_LEN, MAX_DESCRIPTION_LEN,
-    MAX_NAME_LEN, Objects, Tiles, parser,
+    BRAND_36_BITS, BURDENS_5_BITS, Direction, MAX_AUTHOR_LEN, MAX_DESCRIPTION_LEN, MAX_NAME_LEN,
+    Objects, Tiles, parser,
 };
 #[allow(unused_imports)]
 use std::str::FromStr;
@@ -87,9 +87,9 @@ pub enum NumberError {
     #[error("too small of a number: {found} < {min}")]
     TooSmall {
         /// The lowest allowed number.
-        min: u64,
+        min: i64,
         /// The input.
-        found: u64,
+        found: i64,
     },
     /// The input is too big of a number.
     #[error("too big of a number: {found} > {max}")]

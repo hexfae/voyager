@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::str::FromStr;
 use std::{convert::Infallible, io::Cursor, net::IpAddr};
-use tracing::{info, warn};
+use tracing::warn;
 use ulid::Ulid;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -874,14 +874,24 @@ impl ObjectType {
 
     // TODO: get rid of this
     #[allow(clippy::needless_pass_by_value)]
-    pub fn add_statue(input: Vec<String>) -> Result<Self> {
+    pub fn add_statue((prefix, (first, second)): (char, (String, String))) -> Result<Self> {
+        let prefix = u8::try_from(prefix).map_err(|why| Error::InvalidObject(why.to_string()))?;
+        let first = BranefuckProgram::from_str(&first)
+            .map_err(|why| Error::InvalidObject(why.to_string()))?;
+        let second =
+            InputValue::from_str(&second).map_err(|why| Error::InvalidObject(why.to_string()))?;
         Ok(Self::AddStatue {
-            mode: u8::from_str(&input[0]).map_err(|why| Error::InvalidObject(why.to_string()))?,
-            branefuck: BranefuckProgram::from_str(&input[1])
-                .map_err(|why| Error::InvalidObject(why.to_string()))?,
-            destroy_value: InputValue::from_str(&input[2])
-                .map_err(|why| Error::InvalidObject(why.to_string()))?,
+            mode: prefix,
+            branefuck: first,
+            destroy_value: second,
         })
+        // Ok(Self::AddStatue {
+        //     mode: u8::from_str(&input[0]).map_err(|why| Error::InvalidObject(why.to_string()))?,
+        //     branefuck: BranefuckProgram::from_str(&input[1])
+        //         .map_err(|why| Error::InvalidObject(why.to_string()))?,
+        //     destroy_value: InputValue::from_str(&input[2])
+        //         .map_err(|why| Error::InvalidObject(why.to_string()))?,
+        // })
     }
 
     /// Attempts to parse the input as [`ObjectType::Direction`].
@@ -898,16 +908,63 @@ impl ObjectType {
         })
     }
 
-    pub fn offset(input: Vec<String>) -> Result<Self> {
-        todo!();
+    pub fn offset(
+        ((first_sign, x), (second_sign, y)): ((Option<char>, &str), (Option<char>, &str)),
+    ) -> Result<Self> {
+        let mut x = x
+            .parse::<i8>()
+            .map_err(|why| Error::InvalidObject(why.to_string()))?;
+        let mut y = y
+            .parse::<i8>()
+            .map_err(|why| Error::InvalidObject(why.to_string()))?;
+        if first_sign.is_some() {
+            x = -x;
+        }
+        if second_sign.is_some() {
+            y = -y;
+        }
+
+        Ok(Self::Offset {
+            offset_x: x,
+            offset_y: y,
+        })
     }
 
-    pub fn secret_exit(input: Vec<String>) -> Result<Self> {
-        todo!();
+    pub fn secret_exit(
+        (effect, (first_sign, x), (second_sign, y)): (
+            &str,
+            (Option<char>, &str),
+            (Option<char>, &str),
+        ),
+    ) -> Result<Self> {
+        let effect = effect
+            .parse::<u8>()
+            .map_err(|why| Error::InvalidObject(why.to_string()))?;
+        let mut x = x
+            .parse::<i8>()
+            .map_err(|why| Error::InvalidObject(why.to_string()))?;
+        let mut y = y
+            .parse::<i8>()
+            .map_err(|why| Error::InvalidObject(why.to_string()))?;
+        if first_sign.is_some() {
+            x = -x;
+        }
+        if second_sign.is_some() {
+            y = -y;
+        }
+
+        Ok(ObjectType::SecretExit {
+            effect,
+            offset_x: x,
+            offset_y: y,
+        })
     }
 
-    pub fn mural(input: Vec<String>) -> Result<Self> {
-        todo!();
+    pub fn mural((brand, message): (&str, String)) -> Result<Self> {
+        Ok(ObjectType::Mural {
+            brand: brand.parse()?,
+            message: Message(message),
+        })
     }
 }
 
@@ -982,7 +1039,7 @@ impl Version {
         if is_zero {
             return Err(Error::InvalidVersion(NumberError::TooSmall {
                 min: 1,
-                found: u64::from(version),
+                found: i64::from(version),
             }));
         }
         Ok(Self(version))
@@ -1328,13 +1385,10 @@ impl FromStr for Bount {
             }));
         }
         if too_small {
-            return todo!();
-            /*
-            Err(Error::InvalidBount(NumberError::TooSmall {
-                min: u64::from(MIN_BOUNT),
-                found: u64::from(bount),
+            return Err(Error::InvalidBount(NumberError::TooSmall {
+                min: i64::from(MIN_BOUNT),
+                found: i64::from(bount),
             }));
-            */
         }
         Ok(Self(bount))
     }
