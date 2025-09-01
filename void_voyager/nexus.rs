@@ -295,10 +295,13 @@ impl Atlas {
         latest_version: impl Into<u8>,
         allowed_songs: impl AsRef<[String]>,
     ) -> Response {
-        let Ok(sector) = Sector::inscribe(cipher, origin, latest_version, allowed_songs) else {
+        let Ok(mut sector) = Sector::inscribe(cipher, origin, latest_version, allowed_songs) else {
             return StatusCode::BAD_REQUEST.into_response();
         };
         if self.name_and_author_collision_found(&sector) {
+            return StatusCode::BAD_REQUEST.into_response();
+        }
+        if sector.set_dates_to_now().is_err() {
             return StatusCode::BAD_REQUEST.into_response();
         }
         let sigil = sector.sigil();
@@ -340,6 +343,9 @@ impl Atlas {
             return StatusCode::BAD_REQUEST.into_response();
         };
         if self.name_and_author_collision_found(&sector) {
+            return StatusCode::BAD_REQUEST.into_response();
+        }
+        if sector.set_dates_to_now().is_err() {
             return StatusCode::BAD_REQUEST.into_response();
         }
         let Some(old_entry) = self.sectors.remove(&sigil) else {
@@ -469,6 +475,9 @@ impl AllowedSongs {
         "msc_rytmi2",
         "msc_test2",
         "snd_ev_music_judgment_jingle",
+        "msc_universe",
+        "msc_finalapproach",
+        "msc_voidpiano",
     ];
 }
 

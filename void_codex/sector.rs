@@ -15,6 +15,7 @@ use image::imageops::{FilterType, resize};
 use image::{ImageBuffer, ImageFormat, Rgb};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::str::FromStr;
 use std::{convert::Infallible, io::Cursor, net::IpAddr};
@@ -512,14 +513,24 @@ impl Sector {
         })
     }
 
-    /*
     pub fn set_dates_to_now(&mut self) -> Result<()> {
-        let (version, name, description, music, author, brand, _, _, burdens, tiles, objects, theme, bount) =
-            self.cipher
-                .0
-                .splitn(13, '|')
-                .collect_tuple()
-                .ok_or(Error::InvalidStructure)?;
+        let sections: Vec<&str> = self.cipher.0.splitn(SECTION_COUNT, '|').collect();
+        if sections.len() != SECTION_COUNT {
+            return Err(Error::InvalidStructure);
+        }
+        let version = sections[0];
+        let name = sections[1];
+        let description = sections[2];
+        let music = sections[3];
+        let author = sections[4];
+        let brand = sections[5];
+        //let uploaded = sections[6];
+        //let edited = sections[7];
+        let burdens = sections[8];
+        let tiles = sections[9];
+        let objects = sections[10];
+        let theme = sections[11];
+        let bount = sections[12];
 
         let now = OffsetDateTime::now_utc()
             // 2025-03-02
@@ -534,7 +545,7 @@ impl Sector {
         self.compendium.edited = Edited(now);
         Ok(())
     }
-    */
+    
 
     pub fn set_uploaded_from(&mut self, sector: &Self) -> Result<()> {
         let sections: Vec<&str> = self.cipher.0.splitn(SECTION_COUNT, '|').collect();
@@ -875,7 +886,8 @@ impl ObjectType {
     // TODO: get rid of this
     #[allow(clippy::needless_pass_by_value)]
     pub fn add_statue((prefix, (first, second)): (char, (String, String))) -> Result<Self> {
-        let prefix = u8::try_from(prefix).map_err(|why| Error::InvalidObject(why.to_string()))?;
+        let prefix = u8::try_from(prefix).map_err(|why| Error::InvalidObject(why.to_string()))? 
+            - '0' as u8;
         let first = BranefuckProgram::from_str(&first)
             .map_err(|why| Error::InvalidObject(why.to_string()))?;
         let second =
@@ -1028,7 +1040,8 @@ impl Version {
             .parse::<u8>()
             .map_err(|why| Error::InvalidVersion(NumberError::NotANumber(why)))?;
         let too_big = version > latest_version;
-        let is_zero = version == 0;
+        // the parser does not support versions lower than 3
+        let too_small = version < 3;
 
         if too_big {
             return Err(Error::InvalidVersion(NumberError::TooBig {
@@ -1036,9 +1049,9 @@ impl Version {
                 found: u64::from(version),
             }));
         }
-        if is_zero {
+        if too_small {
             return Err(Error::InvalidVersion(NumberError::TooSmall {
-                min: 1,
+                min: 3,
                 found: i64::from(version),
             }));
         }
