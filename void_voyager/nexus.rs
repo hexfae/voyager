@@ -455,7 +455,7 @@ impl Manifest {
 }
 
 impl AllowedSongs {
-    const DEFAULT_ALLOWED_SONGS: [&str; 19] = [
+    const DEFAULT_ALLOWED_SONGS: [&str; 22] = [
         "", // ambience
         "msc_001",
         "msc_dungeon_wings",

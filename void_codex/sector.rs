@@ -236,6 +236,8 @@ pub enum TileId {
     DISEdge,
     /// Encoded as `st`.
     SmallChest,
+    /// Encoded as `nm`
+    NumberedTile
 }
 
 /// A tile's (optional) type.
@@ -785,6 +787,7 @@ impl TileId {
             Self::BlackFloor => "🔲",
             Self::Wall | Self::FunhouseWall | Self::DISWall | Self::EXWall => "🧱",
             Self::SmallChest => "📦",
+            Self::NumberedTile => "🔢",
         }
         .to_string()
     }
@@ -1265,6 +1268,7 @@ impl FromStr for TileId {
             "ed" => Ok(Self::Edge),
             "de" => Ok(Self::DISEdge),
             "st" => Ok(Self::SmallChest),
+            "nm" => Ok(Self::NumberedTile),
             other => Err(Error::InvalidTile(other.to_string())),
         }
     }
@@ -1471,6 +1475,7 @@ impl Display for TileId {
             Self::Edge => "ed",
             Self::DISEdge => "de",
             Self::SmallChest => "st",
+            Self::NumberedTile => "nm",
         };
         write!(f, "{id}")
     }
