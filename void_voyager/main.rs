@@ -25,6 +25,8 @@ async fn main() -> miette::Result<()> {
     startup::WatchVoyagerConfig::watch_voyager_config(&mut debouncer)?;
     // backup levels daily
     tokio::spawn(startup::backup_levels_daily(nexus.atlas.clone()));
+    // backup packs daily
+    tokio::spawn(startup::backup_packs_daily(nexus.cluster_atlas.clone()));
     // serve voyager
     startup::serve_voyager(nexus, backend).await
 }

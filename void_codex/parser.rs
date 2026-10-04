@@ -28,7 +28,7 @@ use tracing::{info, warn};
 
 // for documentation
 #[allow(unused_imports)]
-use crate::sector::BranefuckProgram;
+use crate::BranefuckProgram;
 
 /// Attempts to parse the input as a valid sequence of tiles.
 ///

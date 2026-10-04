@@ -1,6 +1,23 @@
 use crate::{
-    incantations::{adopt, amend, beacon, expunge, inscribe, probe, unveil},
-    nexus::{Atlas, Manifest, Nexus},
+    nexus::{Atlas, ClusterAtlas, Manifest, Nexus}, 
+    incantations::cluster::{
+        adopt as adopt_cluster, 
+        amend as amend_cluster, 
+        expunge as expunge_cluster, 
+        inscribe as inscribe_cluster, 
+        probe as probe_clusters, 
+        unveil as unveil_clusters,
+        detail as detail_cluster,
+    }, 
+    incantations::sector::{
+        adopt as adopt_sector, 
+        amend as amend_sector, 
+        expunge as expunge_sector, 
+        inscribe as inscribe_sector, 
+        probe as probe_sectors, 
+        unveil as unveil_sectors,
+    },
+    incantations::beacon,
     webui::{self, backend::Backend},
 };
 use axum::{
@@ -134,6 +151,7 @@ pub fn file_log(reload_handle: &ReloadHandle) -> WorkerGuard {
 pub fn create_void_voyager_directories() -> Result<(), DirectoryError> {
     try_create_directory("voyager")?;
     try_create_directory("voyager/backups")?;
+    try_create_directory("voyager/backups/packs")?;
     try_create_directory("voyager/logs")?;
     Ok(())
 }
@@ -202,6 +220,16 @@ impl WatchVoyagerConfig for Debouncer {
     }
 }
 
+
+pub async fn backup_packs_daily(atlas: Arc<ClusterAtlas>) {
+    let one_day = Duration::from_secs(60 * 60 * 24);
+    let mut interval = tokio::time::interval(one_day);
+    loop {
+        interval.tick().await;
+        atlas.backup();
+    }
+}
+
 pub async fn backup_levels_daily(atlas: Arc<Atlas>) {
     let one_day = Duration::from_secs(60 * 60 * 24);
     let mut interval = tokio::time::interval(one_day);
@@ -231,13 +259,36 @@ pub async fn serve_voyager(nexus: Nexus, backend: Backend) -> miette::Result<()>
             "/voyager/webui/login",
             get(webui::login::get).post(webui::login::post),
         )
+
+        // routes for levels
+        // for now they are kept as they were before to avoid breaking changes with the
+        // current version of EV, but I think it would be better to prefix them
+        // with `/voyager/levels` to make it clear these are routes for levels
         .route(
             "/voyager",
-            get(unveil).post(inscribe).put(amend).delete(expunge),
+            get(unveil_sectors)
+                .post(inscribe_sector)
+                .put(amend_sector)
+                .delete(expunge_sector),
         )
+        .route("/voyager/orphanage", post(adopt_sector))
+        .route("/voyager/{keys}", get(probe_sectors))
+        // end: routes for levels
+
+        // routes for packs
+        .route(
+            "/voyager/packs",
+            get(unveil_clusters)
+                .post(inscribe_cluster)
+                .put(amend_cluster)
+                .delete(expunge_cluster),
+        )
+        .route("/voyager/packs/detail/{save_name}", get(detail_cluster))
+        .route("/voyager/packs/orphanage", post(adopt_cluster))
+        .route("/voyager/packs/{keys}", post(probe_clusters))
+        // end: routes for packs
+
         .route("/voyager/version", get(beacon))
-        .route("/voyager/orphanage", post(adopt))
-        .route("/voyager/{keys}", get(probe))
         .with_state(nexus)
         .layer(auth_layer)
         .into_make_service_with_connect_info::<SocketAddr>();
