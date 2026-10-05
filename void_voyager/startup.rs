@@ -285,7 +285,7 @@ pub async fn serve_voyager(nexus: Nexus, backend: Backend) -> miette::Result<()>
         )
         .route("/voyager/packs/detail/{save_name}", get(detail_cluster))
         .route("/voyager/packs/orphanage", post(adopt_cluster))
-        .route("/voyager/packs/{keys}", post(probe_clusters))
+        .route("/voyager/packs/{keys}", get(probe_clusters))
         // end: routes for packs
 
         .route("/voyager/version", get(beacon))
