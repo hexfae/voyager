@@ -151,3 +151,20 @@ pub enum StringError {
         found: u64,
     },
 }
+
+/// All monogram-related errors.
+#[derive(Error, Debug)]
+pub enum MonogramError {
+    /// one of hint_type, width, height, target_col or target_row
+    /// is missing from the monogram
+    #[error("missing property")]
+    MissingProperty,
+
+    // monogram's width or height is invalid
+    #[error("invalid range: {found} not in [{min}, {max}]")]
+    InvalidRange { min: u8, max: u8, found: u8 },
+
+    // number of tiles is not exactly width * height
+    #[error("invalid number of tiles: {found} != {expected} ")]
+    InvalidNumberOfTiles { expected: usize, found: usize },
+}

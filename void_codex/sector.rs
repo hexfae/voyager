@@ -6,7 +6,7 @@ use crate::{
     Author, Brand, BrandImage, BranefuckProgram, Cipher, Description, Name, Sigil, prelude::*,
 };
 
-use crate::error::Error;
+use crate::error::{Error, MonogramError};
 use crate::parser::{parse_objects, parse_tiles};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -40,6 +40,18 @@ pub const MAX_BOUNT: i16 = 999;
 
 // The minimum brane count (Inclusive)
 pub const MIN_BOUNT: i16 = -1;
+
+/// A monogram's max width
+pub const MAX_MONOGRAM_WIDTH: u8 = 14;
+
+/// A monogram's min width
+pub const MIN_MONOGRAM_WIDTH: u8 = 1;
+
+/// A monogram's max height
+pub const MAX_MONOGRAM_HEIGHT: u8 = 9;
+
+/// A monogram's min height
+pub const MIN_MONOGRAM_HEIGHT: u8 = 1;
 
 // TODO: a level pack is called a cluster of sectors? or maybe a domain
 /// A Void Stranger level.
@@ -279,6 +291,8 @@ pub enum ObjectId {
     OrbThing,
     /// Encoded as `mu`.
     Mural,
+    /// Encoded as `mg`,
+    Monogram,
     /// Encoded as `ts`.
     TisStatue,
 }
@@ -373,6 +387,23 @@ pub enum ObjectType {
     Egg {
         /// See [`ObjectType::Egg`].
         messages: Vec<Message>,
+    },
+
+    /// A monogram's parameters
+    ///
+    /// - `hint_kind`: used to know what kind of hint this monogram indicates
+    /// - `width`: width of the monogram (between [`MIN_MONOGRAM_WIDTH`] and [`MAX_MONOGRAM_WIDTH`])
+    /// - `height`: height of the monogram (between [`MIN_MONOGRAM_HEIGHT`] and [`MAX_MONOGRAM_HEIGHT`])
+    /// - `target_col`: column of the highlighted position
+    /// - `target_row`: row of the highlighted position
+    /// - `tiles`: represented as an array of u8 with each individual bit corresponding to a tile
+    Monogram {
+        hint_kind: u8,
+        width: u8,
+        height: u8,
+        target_col: u8,
+        target_row: u8,
+        tiles: Vec<u8>,
     },
 }
 
@@ -752,6 +783,7 @@ impl ObjectId {
             Self::OrbThing => "💡",
             Self::Tree => "🌳",
             Self::Mural => "📜",
+            Self::Monogram => "✏️",
         }
         .to_string()
     }
@@ -905,9 +937,63 @@ impl ObjectType {
     }
 
     pub fn mural((brand, message): (&str, String)) -> Result<Self> {
-        Ok(ObjectType::Mural {
+        Ok(Self::Mural {
             brand: brand.parse()?,
             message: Message(message),
+        })
+    }
+
+    pub fn monogram(buffer: Vec<u8>) -> Result<Self> {
+        let mut iter = buffer.into_iter();
+
+        let (hint_kind, width, height, target_col, target_row) = iter
+            .next_tuple()
+            .ok_or_else(|| Error::InvalidObject(MonogramError::MissingProperty.to_string()))?;
+
+        if !(MIN_MONOGRAM_WIDTH..=MAX_MONOGRAM_WIDTH).contains(&width) {
+            // width not in the accepted range
+            return Err(Error::InvalidObject(
+                MonogramError::InvalidRange {
+                    found: width,
+                    min: MIN_MONOGRAM_WIDTH,
+                    max: MAX_MONOGRAM_WIDTH,
+                }
+                .to_string(),
+            ));
+        }
+
+        if !(MIN_MONOGRAM_HEIGHT..=MAX_MONOGRAM_HEIGHT).contains(&height) {
+            // height not in the accepted range
+            return Err(Error::InvalidObject(
+                MonogramError::InvalidRange {
+                    found: height,
+                    min: MIN_MONOGRAM_HEIGHT,
+                    max: MAX_MONOGRAM_HEIGHT,
+                }
+                .to_string(),
+            ));
+        }
+
+        let tiles = iter.collect::<Vec<u8>>();
+        let expected_size: usize = ((width * height).div_ceil(8)).into();
+        if tiles.len() != expected_size {
+            // not the expected bitarray size
+            return Err(Error::InvalidObject(
+                MonogramError::InvalidNumberOfTiles {
+                    expected: expected_size,
+                    found: tiles.len(),
+                }
+                .to_string(),
+            ));
+        }
+
+        Ok(Self::Monogram {
+            hint_kind,
+            width,
+            height,
+            target_col,
+            target_row,
+            tiles,
         })
     }
 }
@@ -1116,6 +1202,7 @@ impl FromStr for ObjectId {
             "cv" => Ok(Self::OrbThing),
             "tr" => Ok(Self::Tree),
             "mu" => Ok(Self::Mural),
+            "mg" => Ok(Self::Monogram),
             "ts" => Ok(Self::TisStatue),
             other => Err(Error::InvalidObject(other.to_string())),
         }
@@ -1299,6 +1386,7 @@ impl Display for ObjectId {
             Self::Scaredeer => "sd",
             Self::OrbThing => "cv",
             Self::Mural => "mu",
+            Self::Monogram => "mg",
             Self::Tree => "tr",
             Self::TisStatue => "ts",
         };
@@ -1363,6 +1451,19 @@ impl Display for ObjectType {
             }
             Self::Mural { brand, message } => {
                 format!("{brand}!{message}!")
+            }
+            Self::Monogram {
+                hint_kind,
+                width,
+                height,
+                target_col,
+                target_row,
+                tiles,
+            } => {
+                let mut monogram = vec![*hint_kind, *width, *height, *target_col, *target_row];
+                monogram.extend(tiles.iter());
+                let monogram = BASE64_STANDARD.encode(monogram);
+                format!("{monogram}!")
             }
         };
         write!(f, "{object_type}")
