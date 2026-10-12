@@ -332,9 +332,9 @@ pub enum ObjectType {
 
     /// This object's horizontal and vertical [`Offset`]
     ///
-    /// The object will be moved horizontally and vertically by offset_x and offset_y.
+    /// The object will be moved horizontally and vertically by `offset_x` and `offset_y`.
     ///
-    /// Only one object currently uses this, that being [`ObjectId::MemoryCrystal``].
+    /// Only one object currently uses this, that being [`ObjectId::MemoryCrystal`].
     Offset { offset_x: i8, offset_y: i8 },
 
     /// A secret exit's parameters.
@@ -645,7 +645,7 @@ impl Sector {
         self.compendium.parsed_burdens.clone()
     }
     #[must_use]
-    pub fn sigil(&self) -> Sigil {
+    pub const fn sigil(&self) -> Sigil {
         self.sigil
     }
 
@@ -851,7 +851,7 @@ impl ObjectType {
     #[allow(clippy::needless_pass_by_value)]
     pub fn add_statue((prefix, (first, second)): (char, (String, String))) -> Result<Self> {
         let prefix =
-            u8::try_from(prefix).map_err(|why| Error::InvalidObject(why.to_string()))? - '0' as u8;
+            u8::try_from(prefix).map_err(|why| Error::InvalidObject(why.to_string()))? - b'0';
         let first = BranefuckProgram::from_str(&first)
             .map_err(|why| Error::InvalidObject(why.to_string()))?;
         let second =
@@ -929,7 +929,7 @@ impl ObjectType {
             y = -y;
         }
 
-        Ok(ObjectType::SecretExit {
+        Ok(Self::SecretExit {
             effect,
             offset_x: x,
             offset_y: y,

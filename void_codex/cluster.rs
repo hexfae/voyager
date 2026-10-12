@@ -65,7 +65,10 @@ pub enum Node {
     /// Encoded as br           
     Brand(BrandNode),
     /// Encoded as lv
-    Level(LevelNode),
+    /// 
+    /// Level nodes are boxed to reduce the size of the enum (from about 352 bytes to 72)
+    /// Without that every instances of node would be of this size, whether it's level or not 
+    Level(Box<LevelNode>),
     /// Encoded as re
     Redirect(RedirectNode),
     /// Encoded as mu
@@ -295,12 +298,12 @@ impl Cluster {
     }
 
     #[must_use]
-    pub fn save_name(&self) -> SaveName {
+    pub const fn save_name(&self) -> SaveName {
         self.domain.save_name
     }
 
     #[must_use]
-    pub fn sigil(&self) -> Sigil {
+    pub const fn sigil(&self) -> Sigil {
         self.sigil
     }
 
@@ -315,12 +318,14 @@ impl Cluster {
             .0
             .match_indices(PACK_SECTION_SEPARATOR)
             .nth(PACK_SECTION_COUNT - 2)
-            .map(|(index, _)| self.cipher.0.chars().take(index).collect())
-            .unwrap_or(self.cipher.to_string())
+            .map_or_else(
+                || self.cipher.to_string(),
+                |(index, _)| self.cipher.0.chars().take(index).collect()
+            )
     }
 
     #[must_use]
-    pub fn number_of_nodes(&self) -> usize {
+    pub const fn number_of_nodes(&self) -> usize {
         self.domain.nodes.len()
     }
 
@@ -393,8 +398,8 @@ impl Domain {
             uploaded,
             edited,
             password,
-            save_name,
             thumbnail,
+            save_name,
             nodes,
         })
     }
@@ -426,7 +431,7 @@ impl Node {
             } else {
                 exits
                     .split(EXIT_SEPARATOR)
-                    .map(|exit| exit.parse())
+                    .map(str::parse)
                     .collect::<Result<_, _>>()?
             },
             position: position.parse()?,
@@ -435,10 +440,10 @@ impl Node {
         match node_id {
             "ro" => Ok(Self::Root(RootNode(base_node, properties.parse()?))),
             "br" => Ok(Self::Brand(BrandNode(base_node, properties.parse()?))),
-            "lv" => Ok(Self::Level(LevelNode(
+            "lv" => Ok(Self::Level(Box::new(LevelNode(
                 base_node,
                 Compendium::decipher(properties, latest_level_version, allowed_songs, true)?,
-            ))),
+            )))),
             "re" => Ok(Self::Redirect(RedirectNode(base_node))),
             "mu" => Ok(Self::Music(MusicNode(
                 base_node,
@@ -506,7 +511,7 @@ impl FromStr for Position {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self> {
-        let (x, y) = s.split_once(",").ok_or(Error::InvalidPosition)?;
+        let (x, y) = s.split_once(',').ok_or(Error::InvalidPosition)?;
 
         Ok(Self {
             x: x.parse()

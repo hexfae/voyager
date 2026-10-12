@@ -155,7 +155,7 @@ pub enum StringError {
 /// All monogram-related errors.
 #[derive(Error, Debug)]
 pub enum MonogramError {
-    /// one of hint_type, width, height, target_col or target_row
+    /// one of `hint_type`, `width`, `height`, `target_col` or `target_row`
     /// is missing from the monogram
     #[error("missing property")]
     MissingProperty,
