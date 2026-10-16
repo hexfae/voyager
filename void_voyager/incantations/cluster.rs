@@ -47,7 +47,7 @@ pub async fn probe(
 
 #[instrument(
     name = "request",
-    skip(nexus),
+    skip(nexus, cluster),
     fields(method = "POST", path = "/voyager/packs")
 )]
 pub async fn inscribe(
@@ -91,7 +91,7 @@ pub async fn adopt(
 
 #[instrument(
     name = "request",
-    skip(nexus),
+    skip(nexus, cluster_and_sigil),
     fields(method = "PUT", path = "/voyager/packs")
 )]
 pub async fn amend(

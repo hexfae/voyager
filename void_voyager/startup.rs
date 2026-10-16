@@ -221,8 +221,8 @@ impl WatchVoyagerConfig for Debouncer {
 }
 
 
-pub async fn backup_packs_daily(atlas: Arc<ClusterAtlas>) {
-    let one_day = Duration::from_secs(60 * 60 * 24);
+pub async fn backup_packs_fortnightly(atlas: Arc<ClusterAtlas>) {
+    let one_day = Duration::from_secs(60 * 60 * 24 * 14);
     let mut interval = tokio::time::interval(one_day);
     loop {
         interval.tick().await;

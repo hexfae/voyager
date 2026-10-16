@@ -13,7 +13,7 @@ use std::{
     sync::Arc,
 };
 use time::OffsetDateTime;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, instrument, warn};
 use void_codex::{Cluster, SaveName, Sector, Sigil};
 
 const CONFIG_PATH: &str = "voyager/config.ron";
@@ -298,7 +298,7 @@ impl ClusterAtlas {
             .iter()
             .map(|cluster| cluster.value().nodeless_cipher())
             .collect::<Vec<String>>();
-        info!("{} packs sent", clusters.len());
+        info!("{} nodeless packs sent", clusters.len());
         let clusters = clusters.join("\n");
         (StatusCode::OK, clusters).into_response()
     }
@@ -364,15 +364,18 @@ impl ClusterAtlas {
         latest_level_version: impl Into<u8>,
         allowed_songs: impl AsRef<[String]>,
     ) -> Response {
-        let Ok(mut cluster) = Cluster::inscribe(
+        let mut cluster = match Cluster::inscribe(
             cipher,
             origin,
             latest_pack_version,
             latest_level_version,
             allowed_songs,
-        ) else {
-            warn!("failed to parse and validate cluster");
-            return StatusCode::BAD_REQUEST.into_response();
+        ) {
+            Ok(cluster) => cluster,
+            Err(err) => {
+              warn!("failed to parse and validate cluster: {}", err);
+              return (StatusCode::BAD_REQUEST, err.to_string()).into_response();
+            }
         };
         if self.name_and_author_collision_found(&cluster) {
             warn!(
@@ -459,16 +462,19 @@ impl ClusterAtlas {
             warn!("failed to parse the key");
             return StatusCode::BAD_REQUEST.into_response();
         };
-        let Ok(mut cluster) = Cluster::amend(
+        let mut cluster = match Cluster::amend(
             cipher,
             sigil,
             origin,
             latest_pack_version,
             latest_level_version,
             allowed_songs,
-        ) else {
+        ) {
+          Ok(cluster) => cluster,
+          Err(err) => {
             warn!("failed to parse the pack");
-            return StatusCode::BAD_REQUEST.into_response();
+            return (StatusCode::BAD_REQUEST, err.to_string()).into_response();
+          }
         };
         if self.name_and_author_collision_found(&cluster) {
             warn!(
@@ -635,8 +641,11 @@ impl Atlas {
         latest_version: impl Into<u8>,
         allowed_songs: impl AsRef<[String]>,
     ) -> Response {
-        let Ok(mut sector) = Sector::inscribe(cipher, origin, latest_version, allowed_songs) else {
-            return StatusCode::BAD_REQUEST.into_response();
+        let mut sector = match Sector::inscribe(cipher, origin, latest_version, allowed_songs) {
+          Ok(sector) => sector,
+          Err(err) => { 
+            return (StatusCode::BAD_REQUEST, err.to_string()).into_response();
+          }
         };
         if self.name_and_author_collision_found(&sector) {
             return StatusCode::BAD_REQUEST.into_response();
@@ -678,10 +687,12 @@ impl Atlas {
         let Ok(sigil) = sigil.parse::<Sigil>() else {
             return StatusCode::BAD_REQUEST.into_response();
         };
-        let Ok(mut sector) = Sector::amend(cipher, sigil, origin, latest_version, allowed_songs)
-        else {
-            return StatusCode::BAD_REQUEST.into_response();
-        };
+        let mut sector = match Sector::amend(cipher, sigil, origin, latest_version, allowed_songs) {
+          Ok(sector) => sector,
+          Err(err) => { 
+            return (StatusCode::BAD_REQUEST, err.to_string()).into_response();
+          }
+        };        
         if self.name_and_author_collision_found(&sector) {
             return StatusCode::BAD_REQUEST.into_response();
         }
