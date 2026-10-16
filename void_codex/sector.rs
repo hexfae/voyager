@@ -1,9 +1,12 @@
 //! Contains the [`Level`] struct, its [`Unvalidated`]
 //! and [`Validated`] states, and related constants.
 
-use crate::prelude::*;
+use crate::common::{Edited, Music, Uploaded, is_branefuck_valid};
+use crate::{
+    Author, Brand, BrandImage, BranefuckProgram, Cipher, Description, Name, Sigil, prelude::*,
+};
 
-use crate::error::Error;
+use crate::error::{Error, MonogramError};
 use crate::parser::{parse_objects, parse_tiles};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -11,37 +14,18 @@ use base64::{Engine, prelude::BASE64_STANDARD};
 use bitvec::order::Lsb0;
 use bitvec::view::BitView;
 use derive_more::Display;
-use image::imageops::{FilterType, resize};
-use image::{ImageBuffer, ImageFormat, Rgb};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::str::FromStr;
-use std::{convert::Infallible, io::Cursor, net::IpAddr};
+use std::{convert::Infallible, net::IpAddr};
+use time::OffsetDateTime;
 use tracing::warn;
-use ulid::Ulid;
 use unicode_segmentation::UnicodeSegmentation;
 
 const VOID_STRANGER_LEVEL_WIDTH: usize = 14;
 
 const SECTION_COUNT: usize = 13;
-
-/// A level's author's brand's highest value.
-///
-/// Equal to 2^36-1, 68719476735, or `68_719_476_735`.
-pub const BRAND_36_BITS: u64 = 0b1111_1111_1111_1111_1111_1111_1111_1111_1111;
-
-/// All of the valid
-/// [Branefuck](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck)
-/// characters.
-///
-/// These are the standard [Brainfuck](https://en.wikipedia.org/wiki/Brainfuck)
-/// characters, plus a few additional characters added by Endless Void.
-/// Additional, because all alphanumeric characters are allowed too.
-///
-/// See [Endless Void's page on Branefuck](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck) for details.
-pub const ADDITIONAL_BRANEFUCK_CHARACTERS: &str = ".,+-[]><?^_#:;\n ";
-
 /// A level's burdens' highest value.
 ///
 /// Equal to 2^5-1 or 32.
@@ -57,14 +41,17 @@ pub const MAX_BOUNT: i16 = 999;
 // The minimum brane count (Inclusive)
 pub const MIN_BOUNT: i16 = -1;
 
-/// A level's author's max length.
-pub const MAX_AUTHOR_LEN: usize = 30;
+/// A monogram's max width
+pub const MAX_MONOGRAM_WIDTH: u8 = 14;
 
-/// A level's decription's max length.
-pub const MAX_DESCRIPTION_LEN: usize = 256;
+/// A monogram's min width
+pub const MIN_MONOGRAM_WIDTH: u8 = 1;
 
-/// A level's name's max length.
-pub const MAX_NAME_LEN: usize = 30;
+/// A monogram's max height
+pub const MAX_MONOGRAM_HEIGHT: u8 = 9;
+
+/// A monogram's min height
+pub const MIN_MONOGRAM_HEIGHT: u8 = 1;
 
 // TODO: a level pack is called a cluster of sectors? or maybe a domain
 /// A Void Stranger level.
@@ -76,12 +63,6 @@ pub struct Sector {
     compendium: Compendium,
     origin: IpAddr,
 }
-
-#[derive(Debug, Display, Clone, Copy, Serialize, Deserialize, Hash, Eq, PartialEq)]
-pub struct Sigil(Ulid);
-
-#[derive(Debug, Display, Clone, Serialize, Deserialize)]
-pub struct Cipher(String);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Compendium {
@@ -106,34 +87,6 @@ pub struct Compendium {
 
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Version(u8);
-
-#[derive(Debug, Display, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Name(String);
-
-#[derive(Debug, Display, Clone, Serialize, Deserialize)]
-pub struct Description(String);
-
-#[derive(Debug, Display, Clone, Serialize, Deserialize)]
-pub struct Music(String);
-
-#[derive(Debug, Display, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Author(String);
-
-#[derive(Debug, Display, Clone, Serialize, Deserialize)]
-pub struct Brand(u64);
-
-#[derive(Debug, Display, Clone, Serialize, Deserialize)]
-#[display("{base64}")]
-pub struct BrandImage {
-    pub base64: String,
-    pub bytes: Vec<u8>,
-}
-
-#[derive(Debug, Display, Clone, Serialize, Deserialize)]
-pub struct Uploaded(String);
-
-#[derive(Debug, Display, Clone, Serialize, Deserialize)]
-pub struct Edited(String);
 
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
 pub struct Burdens(u8);
@@ -235,6 +188,8 @@ pub enum TileId {
     DISEdge,
     /// Encoded as `st`.
     SmallChest,
+    /// Encoded as `nm`
+    NumberedTile,
 }
 
 /// A tile's (optional) type.
@@ -336,6 +291,8 @@ pub enum ObjectId {
     OrbThing,
     /// Encoded as `mu`.
     Mural,
+    /// Encoded as `mg`,
+    Monogram,
     /// Encoded as `ts`.
     TisStatue,
 }
@@ -375,9 +332,9 @@ pub enum ObjectType {
 
     /// This object's horizontal and vertical [`Offset`]
     ///
-    /// The object will be moved horizontally and vertically by offset_x and offset_y.
+    /// The object will be moved horizontally and vertically by `offset_x` and `offset_y`.
     ///
-    /// Only one object currently uses this, that being [`ObjectId::MemoryCrystal``].
+    /// Only one object currently uses this, that being [`ObjectId::MemoryCrystal`].
     Offset { offset_x: i8, offset_y: i8 },
 
     /// A secret exit's parameters.
@@ -431,6 +388,23 @@ pub enum ObjectType {
         /// See [`ObjectType::Egg`].
         messages: Vec<Message>,
     },
+
+    /// A monogram's parameters
+    ///
+    /// - `hint_kind`: used to know what kind of hint this monogram indicates
+    /// - `width`: width of the monogram (between [`MIN_MONOGRAM_WIDTH`] and [`MAX_MONOGRAM_WIDTH`])
+    /// - `height`: height of the monogram (between [`MIN_MONOGRAM_HEIGHT`] and [`MAX_MONOGRAM_HEIGHT`])
+    /// - `target_col`: column of the highlighted position
+    /// - `target_row`: row of the highlighted position
+    /// - `tiles`: represented as an array of u8 with each individual bit corresponding to a tile
+    Monogram {
+        hint_kind: u8,
+        width: u8,
+        height: u8,
+        target_col: u8,
+        target_row: u8,
+        tiles: Vec<u8>,
+    },
 }
 
 /// A tile's (optional) multiplier.
@@ -461,18 +435,6 @@ pub enum Direction {
     Down,
 }
 
-/// A [Branefuck program](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck).
-///
-/// Add statues are able to run
-/// [Branefuck programs](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck)
-/// in [Endless Void](https://github.com/Skirlez/void-stranger-endless-void).
-///
-/// See [`ADDITIONAL_BRANEFUCK_CHARACTERS`] for details on valid characters.
-///
-/// See [Endless Void's page on Branefuck](https://github.com/Skirlez/void-stranger-endless-void/wiki/Branefuck) for further details.
-#[derive(Debug, Display, Clone, Serialize, Deserialize)]
-pub struct BranefuckProgram(pub String);
-
 /// An input value for Add statues.
 /// It can be a number, or a global variable name. We don't care which one.
 #[derive(Debug, Display, Clone, Serialize, Deserialize)]
@@ -491,7 +453,12 @@ impl Sector {
     ) -> Result<Self> {
         Ok(Self {
             sigil: Sigil::new(),
-            compendium: Compendium::decipher(cipher.as_ref(), latest_version, allowed_songs)?,
+            compendium: Compendium::decipher(
+                cipher.as_ref(),
+                latest_version,
+                allowed_songs,
+                false,
+            )?,
             cipher: Cipher(cipher.into()),
             origin: ip,
         })
@@ -506,20 +473,35 @@ impl Sector {
     ) -> Result<Self> {
         Ok(Self {
             sigil,
-            compendium: Compendium::decipher(cipher.as_ref(), latest_version, allowed_songs)?,
+            compendium: Compendium::decipher(
+                cipher.as_ref(),
+                latest_version,
+                allowed_songs,
+                false,
+            )?,
             cipher: Cipher(cipher.into()),
             origin: ip,
         })
     }
 
-    /*
     pub fn set_dates_to_now(&mut self) -> Result<()> {
-        let (version, name, description, music, author, brand, _, _, burdens, tiles, objects, theme, bount) =
-            self.cipher
-                .0
-                .splitn(13, '|')
-                .collect_tuple()
-                .ok_or(Error::InvalidStructure)?;
+        let sections: Vec<&str> = self.cipher.0.splitn(SECTION_COUNT, '|').collect();
+        if sections.len() != SECTION_COUNT {
+            return Err(Error::InvalidStructure);
+        }
+        let version = sections[0];
+        let name = sections[1];
+        let description = sections[2];
+        let music = sections[3];
+        let author = sections[4];
+        let brand = sections[5];
+        //let uploaded = sections[6];
+        //let edited = sections[7];
+        let burdens = sections[8];
+        let tiles = sections[9];
+        let objects = sections[10];
+        let theme = sections[11];
+        let bount = sections[12];
 
         let now = OffsetDateTime::now_utc()
             // 2025-03-02
@@ -534,7 +516,6 @@ impl Sector {
         self.compendium.edited = Edited(now);
         Ok(())
     }
-    */
 
     pub fn set_uploaded_from(&mut self, sector: &Self) -> Result<()> {
         let sections: Vec<&str> = self.cipher.0.splitn(SECTION_COUNT, '|').collect();
@@ -664,7 +645,7 @@ impl Sector {
         self.compendium.parsed_burdens.clone()
     }
     #[must_use]
-    pub fn sigil(&self) -> Sigil {
+    pub const fn sigil(&self) -> Sigil {
         self.sigil
     }
 
@@ -684,20 +665,12 @@ impl Sector {
     }
 }
 
-impl Sigil {
-    /// Generates a new [ULID](https://github.com/ulid/spec)
-    /// key for a level.
-    #[must_use]
-    pub fn new() -> Self {
-        Self(Ulid::new())
-    }
-}
-
 impl Compendium {
     pub fn decipher(
         cipher: impl AsRef<str>,
         latest_version: impl Into<u8>,
         allowed_songs: impl AsRef<[String]>,
+        from_pack: bool,
     ) -> Result<Self> {
         let sections: Vec<&str> = cipher.as_ref().splitn(SECTION_COUNT, '|').collect();
 
@@ -723,7 +696,7 @@ impl Compendium {
         let name = name.parse()?;
         let description = description.parse()?;
         let music = Music::from_str(music, allowed_songs)?;
-        let author = author.parse()?;
+        let author = Author::from_str(author, from_pack)?;
         let brand = brand.parse()?;
         let brand_image = BrandImage::new(&brand);
         let uploaded = Uploaded(uploaded.to_string());
@@ -774,6 +747,7 @@ impl TileId {
             Self::BlackFloor => "🔲",
             Self::Wall | Self::FunhouseWall | Self::DISWall | Self::EXWall => "🧱",
             Self::SmallChest => "📦",
+            Self::NumberedTile => "🔢",
         }
         .to_string()
     }
@@ -809,6 +783,7 @@ impl ObjectId {
             Self::OrbThing => "💡",
             Self::Tree => "🌳",
             Self::Mural => "📜",
+            Self::Monogram => "✏️",
         }
         .to_string()
     }
@@ -875,7 +850,8 @@ impl ObjectType {
     // TODO: get rid of this
     #[allow(clippy::needless_pass_by_value)]
     pub fn add_statue((prefix, (first, second)): (char, (String, String))) -> Result<Self> {
-        let prefix = u8::try_from(prefix).map_err(|why| Error::InvalidObject(why.to_string()))?;
+        let prefix =
+            u8::try_from(prefix).map_err(|why| Error::InvalidObject(why.to_string()))? - b'0';
         let first = BranefuckProgram::from_str(&first)
             .map_err(|why| Error::InvalidObject(why.to_string()))?;
         let second =
@@ -953,7 +929,7 @@ impl ObjectType {
             y = -y;
         }
 
-        Ok(ObjectType::SecretExit {
+        Ok(Self::SecretExit {
             effect,
             offset_x: x,
             offset_y: y,
@@ -961,30 +937,64 @@ impl ObjectType {
     }
 
     pub fn mural((brand, message): (&str, String)) -> Result<Self> {
-        Ok(ObjectType::Mural {
+        Ok(Self::Mural {
             brand: brand.parse()?,
             message: Message(message),
         })
     }
-}
 
-fn is_branefuck_valid(branefuck: &str) -> bool {
-    branefuck
-        .chars()
-        .all(|c| ADDITIONAL_BRANEFUCK_CHARACTERS.contains(c) || c.is_alphanumeric())
-}
+    pub fn monogram(buffer: Vec<u8>) -> Result<Self> {
+        let mut iter = buffer.into_iter();
 
-impl FromStr for BranefuckProgram {
-    type Err = Error;
+        let (hint_kind, width, height, target_col, target_row) = iter
+            .next_tuple()
+            .ok_or_else(|| Error::InvalidObject(MonogramError::MissingProperty.to_string()))?;
 
-    fn from_str(input: &str) -> Result<Self> {
-        if is_branefuck_valid(input) {
-            Ok(Self(input.into()))
-        } else {
-            Err(Error::InvalidObject(
-                "invalid branefuck character found".into(),
-            ))
+        if !(MIN_MONOGRAM_WIDTH..=MAX_MONOGRAM_WIDTH).contains(&width) {
+            // width not in the accepted range
+            return Err(Error::InvalidObject(
+                MonogramError::InvalidRange {
+                    found: width,
+                    min: MIN_MONOGRAM_WIDTH,
+                    max: MAX_MONOGRAM_WIDTH,
+                }
+                .to_string(),
+            ));
         }
+
+        if !(MIN_MONOGRAM_HEIGHT..=MAX_MONOGRAM_HEIGHT).contains(&height) {
+            // height not in the accepted range
+            return Err(Error::InvalidObject(
+                MonogramError::InvalidRange {
+                    found: height,
+                    min: MIN_MONOGRAM_HEIGHT,
+                    max: MAX_MONOGRAM_HEIGHT,
+                }
+                .to_string(),
+            ));
+        }
+
+        let tiles = iter.collect::<Vec<u8>>();
+        let expected_size: usize = ((width * height).div_ceil(8)).into();
+        if tiles.len() != expected_size {
+            // not the expected bitarray size
+            return Err(Error::InvalidObject(
+                MonogramError::InvalidNumberOfTiles {
+                    expected: expected_size,
+                    found: tiles.len(),
+                }
+                .to_string(),
+            ));
+        }
+
+        Ok(Self::Monogram {
+            hint_kind,
+            width,
+            height,
+            target_col,
+            target_row,
+            tiles,
+        })
     }
 }
 
@@ -1028,7 +1038,8 @@ impl Version {
             .parse::<u8>()
             .map_err(|why| Error::InvalidVersion(NumberError::NotANumber(why)))?;
         let too_big = version > latest_version;
-        let is_zero = version == 0;
+        // the parser does not support versions lower than 3
+        let too_small = version < 3;
 
         if too_big {
             return Err(Error::InvalidVersion(NumberError::TooBig {
@@ -1036,147 +1047,13 @@ impl Version {
                 found: u64::from(version),
             }));
         }
-        if is_zero {
+        if too_small {
             return Err(Error::InvalidVersion(NumberError::TooSmall {
-                min: 1,
+                min: 3,
                 found: i64::from(version),
             }));
         }
         Ok(Self(version))
-    }
-}
-
-impl FromStr for Name {
-    type Err = Error;
-
-    fn from_str(input: &str) -> Result<Self> {
-        let name = String::from_utf8(
-            BASE64_STANDARD
-                .decode(input)
-                .map_err(|why| Error::InvalidName(StringError::Base64(why)))?,
-        )
-        .map_err(|why| Error::InvalidName(StringError::FromUtf8(why)))?;
-        if name.is_empty() {
-            return Err(Error::InvalidName(StringError::TooShort));
-        }
-        if name.len() > MAX_NAME_LEN {
-            return Err(Error::InvalidName(StringError::TooLong {
-                max: MAX_NAME_LEN as u64,
-                found: name.len() as u64,
-            }));
-        }
-        Ok(Self(name))
-    }
-}
-
-impl FromStr for Description {
-    type Err = Error;
-
-    fn from_str(input: &str) -> Result<Self> {
-        let description = String::from_utf8(
-            BASE64_STANDARD
-                .decode(input)
-                .map_err(|why| Error::InvalidDescription(StringError::Base64(why)))?,
-        )
-        .map_err(|why| Error::InvalidDescription(StringError::FromUtf8(why)))?;
-        if description.len() > MAX_DESCRIPTION_LEN {
-            return Err(Error::InvalidDescription(StringError::TooLong {
-                max: MAX_DESCRIPTION_LEN as u64,
-                found: description.len() as u64,
-            }));
-        }
-        Ok(Self(description))
-    }
-}
-
-impl Music {
-    /// Parses input as music from Void Stranger.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the input was invalid Base64,
-    /// produced invalid UTF-8, or is not one of the allowed songs.
-    fn from_str(input: &str, allowed_songs: impl AsRef<[String]>) -> Result<Self> {
-        let music = String::from_utf8(
-            BASE64_STANDARD
-                .decode(input)
-                .map_err(|why| Error::InvalidMusic(StringError::Base64(why)))?,
-        )
-        .map_err(|why| Error::InvalidMusic(StringError::FromUtf8(why)))?;
-        if !allowed_songs.as_ref().contains(&music) {
-            return Err(Error::UnknownMusic);
-        }
-        Ok(Self(music))
-    }
-}
-
-impl FromStr for Author {
-    type Err = Error;
-
-    fn from_str(input: &str) -> Result<Self> {
-        let author = String::from_utf8(
-            BASE64_STANDARD
-                .decode(input)
-                .map_err(|why| Error::InvalidAuthor(StringError::Base64(why)))?,
-        )
-        .map_err(|why| Error::InvalidAuthor(StringError::FromUtf8(why)))?;
-        if author.is_empty() {
-            return Err(Error::InvalidName(StringError::TooShort));
-        }
-        if author.len() > MAX_AUTHOR_LEN {
-            return Err(Error::InvalidName(StringError::TooLong {
-                max: MAX_AUTHOR_LEN as u64,
-                found: author.len() as u64,
-            }));
-        }
-        Ok(Self(author))
-    }
-}
-
-impl FromStr for Brand {
-    type Err = Error;
-
-    fn from_str(input: &str) -> Result<Self> {
-        let brand = input
-            .parse::<u64>()
-            .map_err(|why| Error::InvalidBrand(NumberError::NotANumber(why)))?;
-        if brand > BRAND_36_BITS {
-            return Err(Error::InvalidBrand(NumberError::TooBig {
-                max: BRAND_36_BITS,
-                found: brand,
-            }));
-        }
-        Ok(Self(brand))
-    }
-}
-
-impl BrandImage {
-    /// Creates a new [`BrandImage`] from a [`Brand`].
-    ///
-    /// The brand is encoded as a 6x6 PNG image
-    /// of black and white pixels in Base64 format.
-    pub fn new(input: &Brand) -> Self {
-        let width = 6;
-        let height = 6;
-        let mut img = ImageBuffer::<Rgb<u8>, _>::new(width, height);
-        let bits = input.0.view_bits::<Lsb0>();
-        for (x, y, pixel) in img.enumerate_pixels_mut() {
-            let pixel_is_white = bits[(x + y * height) as usize];
-            *pixel = if pixel_is_white {
-                Rgb([255, 255, 255])
-            } else {
-                Rgb([0, 0, 0])
-            };
-        }
-        let img = resize(&img, 60, 60, FilterType::Nearest);
-        let mut buf = Cursor::new(Vec::new());
-        if let Err(why) = img.write_to(&mut buf, ImageFormat::Png) {
-            warn!("something went wrong while writing image to buffer! {why}");
-        }
-        Self {
-            bytes: buf.clone().into_inner(),
-            base64: BASE64_STANDARD.encode(buf.into_inner()),
-        }
     }
 }
 
@@ -1252,6 +1129,7 @@ impl FromStr for TileId {
             "ed" => Ok(Self::Edge),
             "de" => Ok(Self::DISEdge),
             "st" => Ok(Self::SmallChest),
+            "nm" => Ok(Self::NumberedTile),
             other => Err(Error::InvalidTile(other.to_string())),
         }
     }
@@ -1324,6 +1202,7 @@ impl FromStr for ObjectId {
             "cv" => Ok(Self::OrbThing),
             "tr" => Ok(Self::Tree),
             "mu" => Ok(Self::Mural),
+            "mg" => Ok(Self::Monogram),
             "ts" => Ok(Self::TisStatue),
             other => Err(Error::InvalidObject(other.to_string())),
         }
@@ -1394,20 +1273,6 @@ impl FromStr for Bount {
     }
 }
 
-impl Default for Sigil {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl FromStr for Sigil {
-    type Err = Error;
-
-    fn from_str(input: &str) -> Result<Self> {
-        Ok(Self(input.parse()?))
-    }
-}
-
 impl FromStr for Direction {
     type Err = Error;
 
@@ -1458,6 +1323,7 @@ impl Display for TileId {
             Self::Edge => "ed",
             Self::DISEdge => "de",
             Self::SmallChest => "st",
+            Self::NumberedTile => "nm",
         };
         write!(f, "{id}")
     }
@@ -1520,6 +1386,7 @@ impl Display for ObjectId {
             Self::Scaredeer => "sd",
             Self::OrbThing => "cv",
             Self::Mural => "mu",
+            Self::Monogram => "mg",
             Self::Tree => "tr",
             Self::TisStatue => "ts",
         };
@@ -1584,6 +1451,19 @@ impl Display for ObjectType {
             }
             Self::Mural { brand, message } => {
                 format!("{brand}!{message}!")
+            }
+            Self::Monogram {
+                hint_kind,
+                width,
+                height,
+                target_col,
+                target_row,
+                tiles,
+            } => {
+                let mut monogram = vec![*hint_kind, *width, *height, *target_col, *target_row];
+                monogram.extend(tiles.iter());
+                let monogram = BASE64_STANDARD.encode(monogram);
+                format!("{monogram}!")
             }
         };
         write!(f, "{object_type}")

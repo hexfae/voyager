@@ -2,7 +2,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use dashmap::{DashMap, DashSet};
+use dashmap::{DashMap, DashSet, Entry};
 use miette::Diagnostic;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -13,14 +13,15 @@ use std::{
     sync::Arc,
 };
 use time::OffsetDateTime;
-use tracing::{debug, info, warn};
-use void_codex::{Sector, Sigil};
+use tracing::{debug, info, instrument, warn};
+use void_codex::{Cluster, SaveName, Sector, Sigil};
 
 const CONFIG_PATH: &str = "voyager/config.ron";
 
 #[derive(Debug, Clone)]
 pub struct Nexus {
     pub atlas: Arc<Atlas>,
+    pub cluster_atlas: Arc<ClusterAtlas>,
     pub manifest: Arc<RwLock<Manifest>>,
 }
 
@@ -28,6 +29,13 @@ pub struct Nexus {
 pub struct Atlas {
     sectors: DashMap<Sigil, Sector>,
     orphans: DashMap<Sigil, Sector>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct ClusterAtlas {
+    clusters: DashMap<Sigil, Cluster>,
+    orphans: DashMap<Sigil, Cluster>,
+    save_names: DashMap<SaveName, Sigil>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -39,6 +47,8 @@ pub struct Manifest {
     #[serde(default)]
     latest_format_version: LatestFormatVersion,
     #[serde(default)]
+    latest_pack_format_version: LatestPackFormatVersion,
+    #[serde(default)]
     latest_endless_void_version: LatestEndlessVoidVersion,
     #[serde(default)]
     discord_webhook_urls: DiscordWebhookUrls,
@@ -46,7 +56,6 @@ pub struct Manifest {
     #[serde(rename = "banned_ips")]
     banned_origins: BannedOrigins,
 }
-
 
 /// The port voyager binds to.
 ///
@@ -61,9 +70,15 @@ pub struct AllowedSongs(pub Vec<String>);
 
 /// The latest level format version.
 ///
-/// See [`DEFAULT_FORMAT_VERSION`] for the default.
+/// See [`DEFAULT_LATEST_FORMAT_VERSION`] for the default.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LatestFormatVersion(pub u8);
+
+/// The latest pack format version.
+///
+/// See [`DEFAULT_LATEST_PACK_FORMAT_VERSION`] for the default.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LatestPackFormatVersion(pub u8);
 
 /// The latest
 /// [Endless Void](https://github.com/Skirlez/void-stranger-endless-void)
@@ -185,22 +200,355 @@ fn try_open_file_string(path: impl AsRef<str>) -> Result<Option<String>, std::io
 impl Nexus {
     pub fn try_load() -> Result<Self, NexusError> {
         let new = Self {
+            cluster_atlas: Arc::new(ClusterAtlas::try_load()?),
             atlas: Arc::new(Atlas::try_load()?),
             manifest: Arc::new(RwLock::new(Manifest::try_load()?)),
         };
-        info!("{} levels, {} orphans loaded", new.atlas.sectors.len(), new.atlas.orphans.len());
+        info!(
+            "{} packs, {} orphans loaded",
+            new.cluster_atlas.clusters.len(),
+            new.cluster_atlas.orphans.len()
+        );
+        info!(
+            "{} levels, {} orphans loaded",
+            new.atlas.sectors.len(),
+            new.atlas.orphans.len()
+        );
         Ok(new)
     }
 
     pub fn try_save(&self) -> Result<(), NexusError> {
+        self.cluster_atlas.try_save();
         self.atlas.try_save();
         self.manifest.read().try_save()?;
         Ok(())
     }
 
     pub fn vaporize(&self, origin: IpAddr) {
+        self.cluster_atlas.vaporize(origin);
         self.atlas.vaporize(origin);
         self.manifest.read().vaporize(origin);
+    }
+}
+
+/// Almost same thing as Atlas for levels with a different database and
+/// backup paths.
+///
+/// The main difference with levels is the use of an additional
+/// identifier, the save name, that also needs to be unique.
+///
+/// Could probably be refactored to share common code with Atlas
+impl ClusterAtlas {
+    pub fn try_load() -> Result<Self, AtlasError> {
+        let bytes = try_open_file_bytes("voyager/packs.db").context(ReadAtlasSnafu)?;
+        match bytes {
+            Some(bytes) => Ok(bincode::deserialize(&bytes).context(DecodeAtlasSnafu)?),
+            None => Ok(Self::default()),
+        }
+    }
+
+    pub fn try_save(&self) {
+        let copy = self.clone();
+        std::thread::spawn(move || {
+            if let Err(why) = bincode::serialize(&copy)
+                .context(EncodeAtlasSnafu)
+                .and_then(|bytes| write("voyager/packs.db", bytes).context(WriteAtlasSnafu))
+            {
+                warn!("{why}");
+            }
+        });
+    }
+
+    pub fn backup(&self) {
+        let now = OffsetDateTime::now_utc()
+            // 2025-03-19
+            .date()
+            .to_string();
+        let path = format!("voyager/backups/packs/{now}.db");
+        debug!("Pack backup is being created at {path}...");
+
+        match bincode::serialize(&self) {
+            Err(why) => {
+                warn!("Pack backup could not be created: {why}");
+            }
+            Ok(bytes) => {
+                debug!("Pack backup created. Pack backup is saving...");
+                let len = bytes.len();
+                if let Err(why) = write(path, bytes) {
+                    warn!("Pack backup could not be saved: {why}");
+                } else {
+                    debug!("Pack backup saved: {len} bytes.");
+                }
+            }
+        }
+    }
+
+    pub fn name_and_author_collision_found(&self, new: &Cluster) -> bool {
+        self.clusters.iter().any(|cluster| {
+            cluster.name() == new.name()
+                && cluster.author() == new.author()
+                && cluster.sigil_string() != new.sigil_string()
+        })
+    }
+
+    /// Return all nodeless packs seperated by a line return (\n).
+    pub fn unveil(&self) -> Response {
+        let clusters = self
+            .clusters
+            .iter()
+            .map(|cluster| cluster.value().nodeless_cipher())
+            .collect::<Vec<String>>();
+        info!("{} nodeless packs sent", clusters.len());
+        let clusters = clusters.join("\n");
+        (StatusCode::OK, clusters).into_response()
+    }
+
+    /// Return the entire pack for the given `save_name`
+    pub fn detail(&self, save_name: impl Into<String>) -> Response {
+        let save_name: String = save_name.into();
+        let Ok(save_name) = save_name.parse::<SaveName>() else {
+            warn!("failed to parse save name");
+            return StatusCode::BAD_REQUEST.into_response();
+        };
+
+        if let Some(entry) = self.save_names.get(&save_name) {
+            if let Some(entry) = self.clusters.get(entry.value()) {
+                info!("pack sent");
+                (StatusCode::OK, entry.value().cipher()).into_response()
+            } else {
+                warn!("pack not found");
+                return StatusCode::NOT_FOUND.into_response();
+            }
+        } else {
+            warn!("save name not found");
+            return StatusCode::NOT_FOUND.into_response();
+        }
+    }
+
+    /// Check if the given `sigils` (keys), seperated by a comma, are
+    /// mapped to a validated pack.
+    ///
+    /// Return a string of 0 and 1, where 0 is invalid and 1 is valid
+    pub fn probe(&self, sigils: impl AsRef<str>) -> Response {
+        let sigils = sigils.as_ref().split(',').collect::<Vec<&str>>();
+        let sigil_count = sigils.len();
+        let parsed_sigils = sigils
+            .into_iter()
+            .filter_map(|sigil| sigil.parse::<Sigil>().ok());
+        if sigil_count != parsed_sigils.clone().count() {
+            info!("one or more key was invalid");
+            return StatusCode::BAD_REQUEST.into_response();
+        }
+        let valid_sigils = parsed_sigils
+            .map(|sigil| u8::from(self.clusters.contains_key(&sigil)).to_string())
+            .collect::<String>();
+        let valid_sigils_count = valid_sigils.chars().filter(|char| *char == '1').count();
+        info!("{sigil_count} packs checked ({valid_sigils_count} valid)");
+        (StatusCode::OK, valid_sigils).into_response()
+    }
+
+    /// Save a pack.
+    ///
+    /// The pack needs to be validated using `adopt` with the key returned
+    /// by this function.
+    ///
+    /// Checks done:
+    /// - pack is parsed and validated using `Domain::decipher`
+    /// - name and author must not collide with those of another pack
+    /// - save name must be unique, any collision will result in a rejection
+    pub fn inscribe(
+        &self,
+        cipher: impl Into<String> + AsRef<str>,
+        origin: IpAddr,
+        latest_pack_version: impl Into<u8>,
+        latest_level_version: impl Into<u8>,
+        allowed_songs: impl AsRef<[String]>,
+    ) -> Response {
+        let mut cluster = match Cluster::inscribe(
+            cipher,
+            origin,
+            latest_pack_version,
+            latest_level_version,
+            allowed_songs,
+        ) {
+            Ok(cluster) => cluster,
+            Err(err) => {
+              warn!("failed to parse and validate cluster: {}", err);
+              return (StatusCode::BAD_REQUEST, err.to_string()).into_response();
+            }
+        };
+        if self.name_and_author_collision_found(&cluster) {
+            warn!(
+                "found name and author collision with {} by {}",
+                cluster.name(),
+                cluster.author()
+            );
+            return StatusCode::BAD_REQUEST.into_response();
+        }
+        if let Entry::Occupied(_) = self.save_names.entry(cluster.save_name()) {
+            warn!("found save name collision with {}", cluster.save_name());
+            return StatusCode::BAD_REQUEST.into_response();
+        }
+        if cluster.set_dates_to_now().is_err() {
+            warn!("failed to set dates to now");
+            return StatusCode::BAD_REQUEST.into_response();
+        }
+        let sigil = cluster.sigil();
+        info!("{} by {} up for adoption", cluster.name(), cluster.author());
+        self.orphans.insert(sigil, cluster);
+        (StatusCode::CREATED, sigil).into_response()
+    }
+
+    /// Validate a pack and make it available publicly.
+    ///
+    /// The key given by `inscribe` is required to validate it.
+    ///
+    /// Checks done:
+    /// - If the save name is not unique anymore after calling `inscribe`
+    ///   then the pack will be rejected and removed
+    pub fn adopt(&self, sigil: impl Into<String>) -> Result<Response, Box<Response>> {
+        let sigil: String = sigil.into();
+        let Ok(sigil) = sigil.parse::<Sigil>() else {
+            warn!("failed to parse the key");
+            return Err(Box::new(StatusCode::BAD_REQUEST.into_response()));
+        };
+        let Some((_, cluster)) = self.orphans.remove(&sigil) else {
+            warn!("failed to find pack pending for validation");
+            return Err(Box::new(StatusCode::NOT_FOUND.into_response()));
+        };
+
+        // Collision could theoretically happen after calling `inscribe`.
+        // Pack is removed from the orphanage or else it would stay here indefinitely.
+        match self.save_names.entry(cluster.save_name()) {
+            Entry::Vacant(slot) => {
+                slot.insert(sigil);
+            }
+            Entry::Occupied(_) => {
+                warn!("found save name collision with {}", cluster.save_name());
+                self.orphans.remove(&sigil);
+                return Err(Box::new(StatusCode::NOT_FOUND.into_response()));
+            }
+        };
+
+        info!("{} by {} adopted", cluster.name(), cluster.author());
+        self.clusters.insert(sigil, cluster);
+        self.try_save();
+        Ok(StatusCode::NO_CONTENT.into_response())
+    }
+
+    /// Update a pack.
+    ///
+    /// `cipher_and_sigil` must be a concatenation of the pack string
+    /// with the key (returned by `inscribe`) separated with `|`.
+    ///
+    /// Checks done:
+    /// - pack is parsed and validated using `Domain::decipher`
+    /// - name and author must not collide with those of another pack
+    /// - save name must NOT be updated
+    pub fn amend(
+        &self,
+        cipher_and_sigil: impl Into<String>,
+        origin: IpAddr,
+        latest_pack_version: impl Into<u8>,
+        latest_level_version: impl Into<u8>,
+        allowed_songs: impl AsRef<[String]>,
+    ) -> Response {
+        let cipher_and_sigil = cipher_and_sigil.into();
+        let Some((cipher, sigil)) = cipher_and_sigil.rsplit_once('|') else {
+            warn!("failed to split the pack and the key");
+            return StatusCode::BAD_REQUEST.into_response();
+        };
+        let Ok(sigil) = sigil.parse::<Sigil>() else {
+            warn!("failed to parse the key");
+            return StatusCode::BAD_REQUEST.into_response();
+        };
+        let mut cluster = match Cluster::amend(
+            cipher,
+            sigil,
+            origin,
+            latest_pack_version,
+            latest_level_version,
+            allowed_songs,
+        ) {
+          Ok(cluster) => cluster,
+          Err(err) => {
+            warn!("failed to parse the pack");
+            return (StatusCode::BAD_REQUEST, err.to_string()).into_response();
+          }
+        };
+        if self.name_and_author_collision_found(&cluster) {
+            warn!(
+                "found name and author collision with {} by {}",
+                cluster.name(),
+                cluster.author()
+            );
+            return StatusCode::BAD_REQUEST.into_response();
+        }
+        if cluster.set_dates_to_now().is_err() {
+            warn!("failed to set dates to now");
+            return StatusCode::BAD_REQUEST.into_response();
+        }
+        let Some((_, old_cluster)) = self.clusters.remove(&sigil) else {
+            warn!("failed to remove old pack");
+            return StatusCode::NOT_FOUND.into_response();
+        };
+        if cluster.save_name() != old_cluster.save_name() {
+            warn!("attempted to change the save name");
+            return StatusCode::BAD_REQUEST.into_response();
+        }
+        if cluster.set_uploaded_from(&old_cluster).is_err() {
+            warn!("failed to set uploaded from old pack");
+        }
+        info!("{} by {} edited", cluster.name(), cluster.author());
+        self.clusters.insert(sigil, cluster);
+        self.try_save();
+        StatusCode::NO_CONTENT.into_response()
+    }
+
+    /// Remove a pack.
+    ///
+    /// The key given by `inscribe` is required to remove it.
+    pub fn expunge(&self, sigil: impl Into<String>) -> Response {
+        let Ok(sigil) = sigil.into().parse::<Sigil>() else {
+            warn!("failed to parse the key");
+            return StatusCode::BAD_REQUEST.into_response();
+        };
+        let Some((_, cluster)) = self.clusters.remove(&sigil) else {
+            warn!("failed to remove pack");
+            return StatusCode::NOT_FOUND.into_response();
+        };
+        self.save_names.remove(&cluster.save_name());
+        info!("pack {} by {} deleted", cluster.name(), cluster.author());
+        self.try_save();
+        StatusCode::NO_CONTENT.into_response()
+    }
+
+    /// Remove all packs from the same `origin`
+    pub fn vaporize(&self, origin: IpAddr) {
+        self.clusters
+            .iter()
+            .filter(|element| element.origin() == origin)
+            .for_each(|cluster| {
+                self.expunge(cluster.sigil_string());
+            });
+        self.try_save();
+    }
+
+    #[allow(dead_code, reason = "will probably be used for the discord webhook")]
+    pub fn cluster(&self, sigil: impl AsRef<str>) -> Option<Cluster> {
+        let Ok(sigil) = sigil.as_ref().parse::<Sigil>() else {
+            return None;
+        };
+        self.clusters
+            .get(&sigil)
+            .map(|cluster| cluster.value().clone())
+    }
+
+    pub fn clusters(&self) -> Vec<Cluster> {
+        self.clusters
+            .iter()
+            .map(|cluster| cluster.value().clone())
+            .collect()
     }
 }
 
@@ -218,12 +566,10 @@ impl Atlas {
         std::thread::spawn(move || {
             if let Err(why) = bincode::serialize(&copy)
                 .context(EncodeAtlasSnafu)
-                .and_then(|bytes| write("voyager/levels.db", bytes)
-                .context(WriteAtlasSnafu)) 
+                .and_then(|bytes| write("voyager/levels.db", bytes).context(WriteAtlasSnafu))
             {
                 warn!("{why}");
             }
-
         });
     }
 
@@ -233,19 +579,19 @@ impl Atlas {
             .date()
             .to_string();
         let path = format!("voyager/backups/{now}.db");
-        debug!("Backup is being created at {path}...");
+        debug!("Levels backup is being created at {path}...");
 
         match bincode::serialize(&self) {
             Err(why) => {
-                warn!("Backup could not be created: {why}");
+                warn!("Levels backup could not be created: {why}");
             }
             Ok(bytes) => {
-                debug!("Backup created. Backup is saving...");
+                debug!("Levels backup created. Levels backup is saving...");
                 let len = bytes.len();
                 if let Err(why) = write(path, bytes) {
-                    warn!("Backup could not be saved: {why}");
+                    warn!("Levels backup could not be saved: {why}");
                 } else {
-                    debug!("Backup saved: {len} bytes.");
+                    debug!("Levels backup saved: {len} bytes.");
                 }
             }
         }
@@ -295,10 +641,16 @@ impl Atlas {
         latest_version: impl Into<u8>,
         allowed_songs: impl AsRef<[String]>,
     ) -> Response {
-        let Ok(sector) = Sector::inscribe(cipher, origin, latest_version, allowed_songs) else {
-            return StatusCode::BAD_REQUEST.into_response();
+        let mut sector = match Sector::inscribe(cipher, origin, latest_version, allowed_songs) {
+          Ok(sector) => sector,
+          Err(err) => { 
+            return (StatusCode::BAD_REQUEST, err.to_string()).into_response();
+          }
         };
         if self.name_and_author_collision_found(&sector) {
+            return StatusCode::BAD_REQUEST.into_response();
+        }
+        if sector.set_dates_to_now().is_err() {
             return StatusCode::BAD_REQUEST.into_response();
         }
         let sigil = sector.sigil();
@@ -335,11 +687,16 @@ impl Atlas {
         let Ok(sigil) = sigil.parse::<Sigil>() else {
             return StatusCode::BAD_REQUEST.into_response();
         };
-        let Ok(mut sector) = Sector::amend(cipher, sigil, origin, latest_version, allowed_songs)
-        else {
-            return StatusCode::BAD_REQUEST.into_response();
-        };
+        let mut sector = match Sector::amend(cipher, sigil, origin, latest_version, allowed_songs) {
+          Ok(sector) => sector,
+          Err(err) => { 
+            return (StatusCode::BAD_REQUEST, err.to_string()).into_response();
+          }
+        };        
         if self.name_and_author_collision_found(&sector) {
+            return StatusCode::BAD_REQUEST.into_response();
+        }
+        if sector.set_dates_to_now().is_err() {
             return StatusCode::BAD_REQUEST.into_response();
         }
         let Some(old_entry) = self.sectors.remove(&sigil) else {
@@ -437,6 +794,10 @@ impl Manifest {
         self.latest_format_version.0
     }
 
+    pub const fn latest_pack_format_version(&self) -> u8 {
+        self.latest_pack_format_version.0
+    }
+
     #[allow(clippy::missing_const_for_fn)]
     pub fn latest_endless_void_version(&self) -> String {
         self.latest_endless_void_version.0.clone()
@@ -449,7 +810,7 @@ impl Manifest {
 }
 
 impl AllowedSongs {
-    const DEFAULT_ALLOWED_SONGS: [&str; 19] = [
+    const DEFAULT_ALLOWED_SONGS: [&str; 22] = [
         "", // ambience
         "msc_001",
         "msc_dungeon_wings",
@@ -469,13 +830,15 @@ impl AllowedSongs {
         "msc_rytmi2",
         "msc_test2",
         "snd_ev_music_judgment_jingle",
+        "msc_universe",
+        "msc_finalapproach",
+        "msc_voidpiano",
     ];
 }
 
 impl Port {
     const DEFAULT_PORT: u16 = 3000;
 }
-
 
 impl Default for Port {
     fn default() -> Self {
@@ -485,6 +848,10 @@ impl Default for Port {
 
 impl LatestFormatVersion {
     const DEFAULT_LATEST_FORMAT_VERSION: u8 = 3;
+}
+
+impl LatestPackFormatVersion {
+    const DEFAULT_LATEST_PACK_FORMAT_VERSION: u8 = 2;
 }
 
 impl LatestEndlessVoidVersion {
@@ -504,6 +871,12 @@ impl Default for AllowedSongs {
 impl Default for LatestFormatVersion {
     fn default() -> Self {
         Self(Self::DEFAULT_LATEST_FORMAT_VERSION)
+    }
+}
+
+impl Default for LatestPackFormatVersion {
+    fn default() -> Self {
+        Self(Self::DEFAULT_LATEST_PACK_FORMAT_VERSION)
     }
 }
 

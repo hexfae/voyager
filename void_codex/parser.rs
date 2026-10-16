@@ -28,7 +28,7 @@ use tracing::{info, warn};
 
 // for documentation
 #[allow(unused_imports)]
-use crate::sector::BranefuckProgram;
+use crate::BranefuckProgram;
 
 /// Attempts to parse the input as a valid sequence of tiles.
 ///
@@ -136,7 +136,8 @@ fn tile_type(input: &str) -> IResult<&str, Option<TileType>> {
 /// 3. `4aGVsbG8=!dGhlc2UgYXJl!bWVzc2FnZXM=!bG9s!` ([`ObjectType::Egg`])
 /// 4.
 ///
-/// See [`add_statue()`], [`egg()`], [`direction`], [`offset`], [`secret_exit`], and [`mural`] for details.
+/// See [`add_statue()`], [`egg()`], [`direction`], [`offset`], [`secret_exit`],
+/// [`mural`] and [`monogram`] for details.
 fn object_type(input: &str) -> IResult<&str, Option<ObjectType>> {
     opt(alt((
         // NOTE: offset must be before egg because otherwise egg will
@@ -148,6 +149,7 @@ fn object_type(input: &str) -> IResult<&str, Option<ObjectType>> {
         egg,
         direction,
         mural,
+        monogram,
     )))
     .parse(input)
 }
@@ -182,7 +184,7 @@ fn egg(input: &str) -> IResult<&str, ObjectType> {
     let (remaining, number_of_messages) =
         map_res(take(1u8), |n: &str| n.parse::<usize>()).parse(input)?;
     let (remaining, messages) = count(
-        take_until_termination_character_then_decode_base64,
+        take_until_termination_character_then_decode_base64_string,
         number_of_messages,
     )
     .parse(remaining)?;
@@ -248,14 +250,21 @@ fn secret_exit(input: &str) -> IResult<&str, ObjectType> {
 /// Example of valid input: `1007159424!dm95YWdlcg==!`
 ///
 /// See [`ObjectType::mural()`] for details.
-
 fn mural(input: &str) -> IResult<&str, ObjectType> {
     map_res(
         pair(
             take_until_termination_character,
-            take_until_termination_character_then_decode_base64,
+            take_until_termination_character_then_decode_base64_string,
         ),
         ObjectType::mural,
+    )
+    .parse(input)
+}
+
+fn monogram(input: &str) -> IResult<&str, ObjectType> {
+    map_res(
+        take_until_termination_character_then_decode_base64,
+        ObjectType::monogram,
     )
     .parse(input)
 }
@@ -274,8 +283,8 @@ fn add_statue(input: &str) -> IResult<&str, ObjectType> {
         pair(
             terminated(one_of("12"), char('!')),
             pair(
-                take_until_termination_character_then_decode_base64,
-                take_until_termination_character_then_decode_base64,
+                take_until_termination_character_then_decode_base64_string,
+                take_until_termination_character_then_decode_base64_string,
             ),
         ),
         ObjectType::add_statue,
@@ -296,13 +305,22 @@ fn take_until_termination_character(input: &str) -> IResult<&str, &str> {
     terminated(take_until1("!"), char('!')).parse(input)
 }
 
-/// Attempts to take characters until `!` is found, then Base64-decodes them.
+/// Attempts to take characters until `!` is found, then Base64-decodes them to a String.
 ///
 /// Example of valid input: `cGxheWVyX3g=!`
 ///
 /// This is used in many places. For example, most parameters of Add statues
 /// are `!`-terminated, as well as all messages of eggs.
-fn take_until_termination_character_then_decode_base64(input: &str) -> IResult<&str, String> {
+fn take_until_termination_character_then_decode_base64_string(
+    input: &str,
+) -> IResult<&str, String> {
+    terminated(map_res(take_until("!"), decode_base64_string), char('!')).parse(input)
+}
+
+/// Attempts to take characters until `!` is found, then Base64-decodes them to a Vec<u8>.
+///
+/// Mainly used to decode monograms
+fn take_until_termination_character_then_decode_base64(input: &str) -> IResult<&str, Vec<u8>> {
     terminated(map_res(take_until("!"), decode_base64), char('!')).parse(input)
 }
 
@@ -312,13 +330,14 @@ fn take_until_termination_character_then_decode_base64(input: &str) -> IResult<&
 /// Base64.
 ///
 /// Example of valid input: `aGVsbG8=` (or any valid Base64, really)
-fn decode_base64(input: &str) -> Result<String> {
-    String::from_utf8(
-        BASE64_STANDARD
-            .decode(input)
-            .map_err(|why| Error::InvalidObject(why.to_string()))?,
-    )
-    .map_err(|why| Error::InvalidObject(why.to_string()))
+fn decode_base64_string(input: &str) -> Result<String> {
+    String::from_utf8(decode_base64(input)?).map_err(|why| Error::InvalidObject(why.to_string()))
+}
+
+fn decode_base64(input: &str) -> Result<Vec<u8>> {
+    BASE64_STANDARD
+        .decode(input)
+        .map_err(|why| Error::InvalidObject(why.to_string()))
 }
 
 /// Tests if the character is an ASCII digit: `0-9`.

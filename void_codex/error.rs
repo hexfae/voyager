@@ -8,8 +8,8 @@ use thiserror::Error;
 // for documentation
 #[allow(unused_imports)]
 use crate::{
-    BRAND_36_BITS, BURDENS_5_BITS, Direction, MAX_AUTHOR_LEN, MAX_DESCRIPTION_LEN, MAX_NAME_LEN,
-    Objects, Tiles, parser,
+    BRAND_36_BITS, BURDENS_5_BITS, Direction, MAX_AUTHOR_LEN, MAX_COMMENT_LEN, MAX_DESCRIPTION_LEN,
+    MAX_NAME_LEN, MAX_PALETTE, Objects, Tiles, parser,
 };
 #[allow(unused_imports)]
 use std::str::FromStr;
@@ -62,7 +62,6 @@ pub enum Error {
     /// The level's bount is not encoded as a number, or is too big ([`MAX_BOUNT`]), or if it's too small ([`MIN_BOUNT`])
     #[error("invalid bount: {0}")]
     InvalidBount(NumberError),
-
     /// The key is not a valid [ULID](https://github.com/ulid/spec) key.
     #[error("key error: {0}")]
     InvalidKey(#[from] ulid::DecodeError),
@@ -73,6 +72,31 @@ pub enum Error {
     /// is apparently preferred to [`From<&str>`]
     #[error(transparent)]
     Infallible(#[from] std::convert::Infallible),
+    /// One of the node's exit is not encoded as a number
+    #[error("invalid exit: {0}")]
+    InvalidExit(NumberError),
+    /// One of the node's position is not encoded as two numbers seperated by a comma
+    #[error("invalid position")]
+    InvalidPosition,
+    /// One of the node's position's coordinate is not encoded as signed number
+    #[error("invalid position coordinate: {0}")]
+    InvalidPositionCoordinate(NumberError),
+    /// One of the pack's node is invalid
+    #[error("invalid node: {0}")]
+    InvalidNode(String),
+    /// The root node fall value is not 0 or 1
+    #[error("invalid fall: {0}")]
+    InvalidFall(String),
+    /// The comment node is too long (>[`MAX_COMMENT_LEN`]), is invalid
+    /// Base64, or is decoded into invalid UTF-8.
+    #[error("invalid comment: {0}")]
+    InvalidComment(StringError),
+    /// The node's palette is not encoded as a number, or is too big (>[`MAX_PALETTE`]).
+    #[error("invalid palette: {0}")]
+    InvalidPalette(NumberError),
+    /// The pack's password is invalid base64, or is decoded into invalid UTF-8.
+    #[error("invalid password: {0}")]
+    InvalidPassword(StringError),
 }
 
 /// All number-related level errors.
@@ -126,4 +150,21 @@ pub enum StringError {
         /// The input.
         found: u64,
     },
+}
+
+/// All monogram-related errors.
+#[derive(Error, Debug)]
+pub enum MonogramError {
+    /// one of `hint_type`, `width`, `height`, `target_col` or `target_row`
+    /// is missing from the monogram
+    #[error("missing property")]
+    MissingProperty,
+
+    // monogram's width or height is invalid
+    #[error("invalid range: {found} not in [{min}, {max}]")]
+    InvalidRange { min: u8, max: u8, found: u8 },
+
+    // number of tiles is not exactly width * height
+    #[error("invalid number of tiles: {found} != {expected} ")]
+    InvalidNumberOfTiles { expected: usize, found: usize },
 }
